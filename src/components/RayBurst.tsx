@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { CandlestickData } from "@/types/candlestick";
 
 interface Ray {
   angle: number;
@@ -33,9 +34,45 @@ export default function RayBurst() {
   const [numRays, setNumRays] = useState(12);
   const [backgroundImage, setBackgroundImage] =
     useState<HTMLImageElement | null>(null);
+  const [candlestickData, setCandlestickData] = useState<CandlestickData[]>([]);
+  const [showCandlesticks, setShowCandlesticks] = useState(false);
+  const [candlestickWidth, setCandlestickWidth] = useState(10);
+  const [candlestickSpacing, setCandlestickSpacing] = useState(5);
+  const [yAxisWidth] = useState(60);
+  const [xAxisHeight] = useState(30);
+  const [gridOpacity, setGridOpacity] = useState(0.2);
+  const [showGrid, setShowGrid] = useState(true);
+  const [isPanning, setIsPanning] = useState(false);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
+
   const [imageOpacity, setImageOpacity] = useState(100);
   // Store reference lines (CMD+click for horizontal, Shift+click for vertical)
   const [referenceLines, setReferenceLines] = useState<ReferenceLine[]>([]);
+
+  // Handle space key for panning
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        e.preventDefault();
+        setIsPanning(true);
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        setIsPanning(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, []);
 
   // Update all ray bursts when numRays changes
   useEffect(() => {
@@ -59,6 +96,7 @@ export default function RayBurst() {
       })),
     );
   }, [numRays]);
+
   const [transparency, setTransparency] = useState(100);
   const [binSize, setBinSize] = useState(10);
   const [amplification, setAmplification] = useState(1);
@@ -165,7 +203,21 @@ export default function RayBurst() {
     );
   };
 
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isPanning) {
+      const dx = e.clientX - lastMousePos.x;
+      const dy = e.clientY - lastMousePos.y;
+      setPanOffset((prev) => ({
+        x: prev.x + dx,
+        y: prev.y + dy,
+      }));
+    }
+    setLastMousePos({ x: e.clientX, y: e.clientY });
+  };
+
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isPanning) return; // Prevent clicks while panning
+
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
@@ -239,6 +291,117 @@ export default function RayBurst() {
     if (!ctx || !canvas) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw candlesticks if enabled
+    if (showCandlesticks && candlestickData.length > 0) {
+      const chartArea = {
+        x: yAxisWidth,
+        y: 0,
+        width: canvas.width - yAxisWidth,
+        height: canvas.height - xAxisHeight,
+      };
+
+      // Calculate visible candle range based on pan offset
+      const candleWidth = candlestickWidth + candlestickSpacing;
+      const startIndex = Math.max(0, Math.floor(-panOffset.x / candleWidth));
+      const endIndex = Math.min(
+        candlestickData.length,
+        Math.ceil((chartArea.width - panOffset.x) / candleWidth),
+      );
+      const visibleCandles = candlestickData.slice(startIndex, endIndex);
+
+      // Calculate price range from visible candles
+      const maxPrice = Math.max(...visibleCandles.map((d) => d.high));
+      const minPrice = Math.min(...visibleCandles.map((d) => d.low));
+      const priceRange = maxPrice - minPrice;
+      const heightScale = chartArea.height / priceRange;
+
+      // Draw grid if enabled
+      if (showGrid) {
+        ctx.strokeStyle = `rgba(255, 255, 255, ${gridOpacity})`;
+        ctx.lineWidth = 1;
+
+        // Vertical grid lines (time)
+        const timeInterval = Math.ceil(visibleCandles.length / 10); // Show ~10 lines
+        for (let i = startIndex; i < endIndex; i += timeInterval) {
+          const x = chartArea.x + i * candleWidth;
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, chartArea.height);
+          ctx.stroke();
+        }
+
+        // Horizontal grid lines (price)
+        const priceInterval = priceRange / 10; // Show 10 lines
+        for (let price = minPrice; price <= maxPrice; price += priceInterval) {
+          const y = chartArea.height - (price - minPrice) * heightScale;
+          ctx.beginPath();
+          ctx.moveTo(chartArea.x, y);
+          ctx.lineTo(canvas.width, y);
+          ctx.stroke();
+        }
+      }
+
+      // Draw Y-axis (price)
+      ctx.fillStyle = "white";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      ctx.font = "12px monospace";
+
+      const priceInterval = priceRange / 10;
+      for (let price = minPrice; price <= maxPrice; price += priceInterval) {
+        const y = chartArea.height - (price - minPrice) * heightScale;
+        ctx.fillText(price.toFixed(2), chartArea.x - 5, y);
+      }
+
+      // Draw X-axis (time)
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      const timeInterval = Math.ceil(visibleCandles.length / 10);
+      for (let i = startIndex; i < endIndex; i += timeInterval) {
+        const x = chartArea.x + i * candleWidth;
+        const date = new Date(candlestickData[i].time * 1000);
+        const timeStr = date.toLocaleTimeString();
+        ctx.fillText(timeStr, x, chartArea.height + 5);
+      }
+      ctx.save();
+      ctx.translate(panOffset.x, panOffset.y);
+
+      // Apply chart area offset
+      ctx.translate(chartArea.x, 0);
+
+      candlestickData.forEach((candle, i) => {
+        const x = i * (candlestickWidth + candlestickSpacing);
+
+        // Draw the wick
+        ctx.beginPath();
+        ctx.strokeStyle = "white";
+        ctx.moveTo(
+          x + candlestickWidth / 2,
+          canvas.height - (candle.high - minPrice) * heightScale,
+        );
+        ctx.lineTo(
+          x + candlestickWidth / 2,
+          canvas.height - (candle.low - minPrice) * heightScale,
+        );
+        ctx.stroke();
+
+        // Draw the body
+        const isGreen = candle.close >= candle.open;
+        ctx.fillStyle = isGreen
+          ? "rgba(0, 255, 0, 0.5)"
+          : "rgba(255, 0, 0, 0.5)";
+        const bodyTop =
+          canvas.height -
+          (Math.max(candle.open, candle.close) - minPrice) * heightScale;
+        const bodyBottom =
+          canvas.height -
+          (Math.min(candle.open, candle.close) - minPrice) * heightScale;
+        ctx.fillRect(x, bodyTop, candlestickWidth, bodyBottom - bodyTop);
+      });
+
+      ctx.restore();
+    }
 
     // Draw background image if exists
     if (backgroundImage) {
@@ -374,6 +537,11 @@ export default function RayBurst() {
     backgroundImage,
     imageOpacity,
     referenceLines,
+    candlestickData,
+    showCandlesticks,
+    candlestickWidth,
+    candlestickSpacing,
+    panOffset,
   ]);
 
   return (
@@ -382,7 +550,8 @@ export default function RayBurst() {
         <canvas
           ref={canvasRef}
           onClick={handleCanvasClick}
-          className="absolute inset-0 w-full h-full bg-black cursor-crosshair"
+          onMouseMove={handleCanvasMouseMove}
+          className={`absolute inset-0 w-full h-full bg-black ${isPanning ? "cursor-move" : "cursor-crosshair"}`}
         />
       </div>
       <div className="w-64 bg-gray-900 p-4 flex flex-col gap-4 border-l border-gray-800 overflow-y-auto">
@@ -536,6 +705,129 @@ export default function RayBurst() {
           >
             Clear Detectors
           </button>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-200">
+              Candlestick Data
+            </label>
+            <input
+              type="file"
+              accept=".csv"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onload = (e) => {
+                    const text = e.target?.result as string;
+                    const lines = text.split("\n");
+                    const headers = lines[0].split(",");
+                    const data: CandlestickData[] = [];
+
+                    for (let i = 1; i < lines.length; i++) {
+                      const values = lines[i].split(",");
+                      if (values.length === 5) {
+                        data.push({
+                          time: parseInt(values[0]),
+                          open: parseFloat(values[1]),
+                          high: parseFloat(values[2]),
+                          low: parseFloat(values[3]),
+                          close: parseFloat(values[4]),
+                        });
+                      }
+                    }
+
+                    setCandlestickData(data);
+                    setShowCandlesticks(true);
+                  };
+                  reader.readAsText(file);
+                }
+              }}
+              className="w-full bg-gray-800 text-white px-3 py-2 rounded file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-cyan-600 file:text-white hover:file:bg-cyan-700"
+            />
+          </div>
+
+          {candlestickData.length > 0 && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-200">
+                  Show Candlesticks
+                </label>
+                <input
+                  type="checkbox"
+                  checked={showCandlesticks}
+                  onChange={(e) => setShowCandlesticks(e.target.checked)}
+                  className="w-4 h-4"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-200">
+                  Candlestick Width
+                </label>
+                <input
+                  type="number"
+                  value={candlestickWidth}
+                  onChange={(e) =>
+                    setCandlestickWidth(
+                      Math.max(1, parseInt(e.target.value) || 1),
+                    )
+                  }
+                  className="w-full bg-gray-800 text-white px-3 py-2 rounded"
+                  min="1"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-200">
+                  Candlestick Spacing
+                </label>
+                <input
+                  type="number"
+                  value={candlestickSpacing}
+                  onChange={(e) =>
+                    setCandlestickSpacing(
+                      Math.max(0, parseInt(e.target.value) || 0),
+                    )
+                  }
+                  className="w-full bg-gray-800 text-white px-3 py-2 rounded"
+                  min="0"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-200">
+                  Show Grid
+                </label>
+                <input
+                  type="checkbox"
+                  checked={showGrid}
+                  onChange={(e) => setShowGrid(e.target.checked)}
+                  className="w-4 h-4"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-200">
+                  Grid Opacity
+                </label>
+                <input
+                  type="number"
+                  value={gridOpacity * 100}
+                  onChange={(e) =>
+                    setGridOpacity(
+                      Math.min(
+                        1,
+                        Math.max(0, parseInt(e.target.value) || 0) / 100,
+                      ),
+                    )
+                  }
+                  className="w-full bg-gray-800 text-white px-3 py-2 rounded"
+                  min="0"
+                  max="100"
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
