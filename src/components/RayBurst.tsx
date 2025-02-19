@@ -11,24 +11,62 @@ interface RayBurst {
   rays: Ray[];
 }
 
+interface ReferenceLine {
+  x: number;
+  y: number;
+  isHorizontal: boolean;
+}
+
 interface Detector {
   x: number;
   height: number;
   bins: number[];
+  isComposite?: boolean;
 }
 
 const CENTROID_RADIUS = 5;
 const DETECTOR_WIDTH = 4;
-const MAX_BAR_WIDTH = 100; // Maximum width for intensity bars
 
 export default function RayBurst() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [rays, setRays] = useState<RayBurst[]>([]);
   const [numRays, setNumRays] = useState(12);
+  const [backgroundImage, setBackgroundImage] =
+    useState<HTMLImageElement | null>(null);
+  const [imageOpacity, setImageOpacity] = useState(100);
+  // Store reference lines (CMD+click for horizontal, Shift+click for vertical)
+  const [referenceLines, setReferenceLines] = useState<ReferenceLine[]>([]);
+
+  // Update all ray bursts when numRays changes
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    setRays((prev) =>
+      prev.map((burst) => ({
+        ...burst,
+        rays: Array.from({ length: numRays }, (_, i) => {
+          const angle = (Math.PI * 2 * i) / numRays;
+          const length = calculateRayLength(
+            burst.x,
+            burst.y,
+            angle,
+            canvas.width,
+            canvas.height,
+          );
+          return { angle, length };
+        }),
+      })),
+    );
+  }, [numRays]);
   const [transparency, setTransparency] = useState(100);
   const [binSize, setBinSize] = useState(10);
-  const [detector, setDetector] = useState<Detector | null>(null);
+  const [amplification, setAmplification] = useState(1);
+  const [maxBarWidth, setMaxBarWidth] = useState(100);
+  const [detectors, setDetectors] = useState<Detector[]>([]);
   const [isPlacingDetector, setIsPlacingDetector] = useState(false);
+  const [isPlacingCompositeDetector, setIsPlacingCompositeDetector] =
+    useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -38,8 +76,10 @@ export default function RayBurst() {
     if (!ctx) return;
 
     const handleResize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      const parent = canvas.parentElement;
+      if (!parent) return;
+      canvas.width = parent.clientWidth;
+      canvas.height = parent.clientHeight;
     };
 
     handleResize();
@@ -103,40 +143,57 @@ export default function RayBurst() {
   };
 
   const updateDetectorBins = () => {
-    if (!detector) return;
+    setDetectors((prevDetectors) =>
+      prevDetectors.map((detector) => {
+        const numBins = Math.ceil(detector.height / binSize);
+        const bins = new Array(numBins).fill(0);
 
-    const numBins = Math.ceil(detector.height / binSize);
-    const bins = new Array(numBins).fill(0);
+        rays.forEach((burst) => {
+          burst.rays.forEach((ray) => {
+            const intersectY = calculateIntersection(ray, burst, detector.x);
+            if (intersectY === null) return;
 
-    rays.forEach((burst) => {
-      burst.rays.forEach((ray) => {
-        const intersectY = calculateIntersection(ray, burst, detector.x);
-        if (intersectY === null) return;
+            const binIndex = Math.floor(intersectY / binSize);
+            if (binIndex >= 0 && binIndex < bins.length) {
+              bins[binIndex]++;
+            }
+          });
+        });
 
-        const binIndex = Math.floor(intersectY / binSize);
-        if (binIndex >= 0 && binIndex < bins.length) {
-          bins[binIndex]++;
-        }
-      });
-    });
-
-    setDetector((prev) => (prev ? { ...prev, bins } : null));
+        return { ...detector, bins };
+      }),
+    );
   };
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const clickX = e.clientX;
-    const clickY = e.clientY;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
 
-    if (isPlacingDetector) {
+    // Handle reference lines (CMD/Shift + click)
+    if (e.metaKey || e.shiftKey) {
+      setReferenceLines((prev) => [
+        ...prev,
+        { x: clickX, y: clickY, isHorizontal: e.metaKey },
+      ]);
+      return;
+    }
+
+    if (isPlacingDetector || isPlacingCompositeDetector) {
       const canvas = canvasRef.current;
       if (!canvas) return;
 
-      setDetector({
-        x: clickX,
-        height: canvas.height,
-        bins: new Array(Math.ceil(canvas.height / binSize)).fill(0),
-      });
+      setDetectors((prev) => [
+        ...prev,
+        {
+          x: clickX,
+          height: canvas.height,
+          bins: new Array(Math.ceil(canvas.height / binSize)).fill(0),
+          isComposite: isPlacingCompositeDetector,
+        },
+      ]);
       setIsPlacingDetector(false);
+      setIsPlacingCompositeDetector(false);
       return;
     }
 
@@ -174,7 +231,7 @@ export default function RayBurst() {
 
   useEffect(() => {
     updateDetectorBins();
-  }, [rays, binSize, detector?.x]);
+  }, [rays, binSize, detectors]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -182,6 +239,13 @@ export default function RayBurst() {
     if (!ctx || !canvas) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw background image if exists
+    if (backgroundImage) {
+      ctx.globalAlpha = imageOpacity / 100;
+      ctx.drawImage(backgroundImage, 0, 0, canvas.width, canvas.height);
+      ctx.globalAlpha = 1;
+    }
 
     const alpha = transparency / 100;
 
@@ -205,83 +269,275 @@ export default function RayBurst() {
       ctx.fill();
     });
 
-    // Draw detector
-    if (detector) {
-      const maxIntensity = Math.max(...detector.bins, 1);
+    // Draw reference lines
+    referenceLines.forEach((line) => {
+      ctx.beginPath();
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 2;
 
-      detector.bins.forEach((intensity, i) => {
-        const normalizedIntensity = intensity / maxIntensity;
-        const barWidth = normalizedIntensity * MAX_BAR_WIDTH;
+      if (line.isHorizontal) {
+        // Draw horizontal reference line
+        ctx.moveTo(0, line.y);
+        ctx.lineTo(canvas.width, line.y);
+      } else {
+        // Draw vertical reference line
+        ctx.moveTo(line.x, 0);
+        ctx.lineTo(line.x, canvas.height);
+      }
 
-        // Draw the vertical detector line
-        ctx.fillStyle = `rgba(0, 255, 255, 0.5)`;
-        ctx.fillRect(
-          detector.x - DETECTOR_WIDTH / 2,
-          i * binSize,
-          DETECTOR_WIDTH,
-          binSize,
+      ctx.stroke();
+    });
+
+    // Draw detectors
+    detectors.forEach((detector) => {
+      if (detector.isComposite) {
+        // For composite detectors, combine all bins from detectors to the left
+        const leftDetectors = detectors.filter(
+          (d) => d.x < detector.x && !d.isComposite,
         );
+        const combinedBins = new Array(
+          Math.ceil(detector.height / binSize),
+        ).fill(0);
 
-        // Draw the intensity bar
-        ctx.fillStyle = `rgba(0, 255, 255, ${normalizedIntensity})`;
-        ctx.fillRect(
-          detector.x + DETECTOR_WIDTH / 2,
-          i * binSize,
-          barWidth,
-          binSize,
-        );
-      });
-    }
-  }, [rays, transparency, detector, binSize]);
+        leftDetectors.forEach((leftDetector) => {
+          leftDetector.bins.forEach((value, index) => {
+            if (index < combinedBins.length) {
+              combinedBins[index] += value;
+            }
+          });
+        });
+
+        const maxIntensity = Math.max(...combinedBins, 1);
+
+        combinedBins.forEach((intensity, i) => {
+          const normalizedIntensity = Math.min(
+            1,
+            (intensity / maxIntensity) * amplification,
+          );
+          const barWidth = normalizedIntensity * maxBarWidth;
+
+          // Draw the vertical detector line in a different color for composite
+          ctx.fillStyle = `rgba(255, 165, 0, 0.5)`; // Orange for composite
+          ctx.fillRect(
+            detector.x - DETECTOR_WIDTH / 2,
+            i * binSize,
+            DETECTOR_WIDTH,
+            binSize,
+          );
+
+          // Draw the intensity bar
+          ctx.fillStyle = `rgba(255, 165, 0, ${normalizedIntensity})`;
+          ctx.fillRect(
+            detector.x + DETECTOR_WIDTH / 2,
+            i * binSize,
+            barWidth,
+            binSize,
+          );
+        });
+      } else {
+        const maxIntensity = Math.max(...detector.bins, 1);
+
+        detector.bins.forEach((intensity, i) => {
+          const normalizedIntensity = Math.min(
+            1,
+            (intensity / maxIntensity) * amplification,
+          );
+          const barWidth = normalizedIntensity * maxBarWidth;
+
+          // Draw the vertical detector line
+          ctx.fillStyle = `rgba(0, 255, 255, 0.5)`;
+          ctx.fillRect(
+            detector.x - DETECTOR_WIDTH / 2,
+            i * binSize,
+            DETECTOR_WIDTH,
+            binSize,
+          );
+
+          // Draw the intensity bar
+          ctx.fillStyle = `rgba(0, 255, 255, ${normalizedIntensity})`;
+          ctx.fillRect(
+            detector.x + DETECTOR_WIDTH / 2,
+            i * binSize,
+            barWidth,
+            binSize,
+          );
+        });
+      }
+    });
+  }, [
+    rays,
+    transparency,
+    detectors,
+    binSize,
+    amplification,
+    maxBarWidth,
+    backgroundImage,
+    imageOpacity,
+    referenceLines,
+  ]);
 
   return (
-    <div className="relative w-full h-full">
-      <div className="absolute top-4 left-4 z-10 flex gap-2">
-        <input
-          type="number"
-          value={numRays}
-          onChange={(e) =>
-            setNumRays(Math.max(1, parseInt(e.target.value) || 1))
-          }
-          className="bg-white/10 text-white px-3 py-2 rounded w-24"
-          min="1"
-          placeholder="Rays"
+    <div className="fixed inset-0 flex">
+      <div className="relative flex-1">
+        <canvas
+          ref={canvasRef}
+          onClick={handleCanvasClick}
+          className="absolute inset-0 w-full h-full bg-black cursor-crosshair"
         />
-        <input
-          type="number"
-          value={transparency}
-          onChange={(e) =>
-            setTransparency(
-              Math.min(100, Math.max(0, parseInt(e.target.value) || 0)),
-            )
-          }
-          className="bg-white/10 text-white px-3 py-2 rounded w-24"
-          min="0"
-          max="100"
-          placeholder="Opacity %"
-        />
-        <input
-          type="number"
-          value={binSize}
-          onChange={(e) =>
-            setBinSize(Math.max(1, parseInt(e.target.value) || 1))
-          }
-          className="bg-white/10 text-white px-3 py-2 rounded w-24"
-          min="1"
-          placeholder="Bin Size"
-        />
-        <button
-          onClick={() => setIsPlacingDetector(true)}
-          className="bg-white/10 text-white px-3 py-2 rounded hover:bg-white/20"
-        >
-          Place Detector
-        </button>
       </div>
-      <canvas
-        ref={canvasRef}
-        onClick={handleCanvasClick}
-        className="w-full h-full bg-black cursor-crosshair"
-      />
+      <div className="w-64 bg-gray-900 p-4 flex flex-col gap-4 border-l border-gray-800 overflow-y-auto">
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-200">
+            Number of Rays
+          </label>
+          <input
+            type="number"
+            value={numRays}
+            onChange={(e) =>
+              setNumRays(Math.max(1, parseInt(e.target.value) || 1))
+            }
+            className="w-full bg-gray-800 text-white px-3 py-2 rounded"
+            min="1"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-200">
+            Opacity (%)
+          </label>
+          <input
+            type="number"
+            value={transparency}
+            onChange={(e) =>
+              setTransparency(
+                Math.min(100, Math.max(0, parseInt(e.target.value) || 0)),
+              )
+            }
+            className="w-full bg-gray-800 text-white px-3 py-2 rounded"
+            min="0"
+            max="100"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-200">
+            Bin Size (px)
+          </label>
+          <input
+            type="number"
+            value={binSize}
+            onChange={(e) =>
+              setBinSize(Math.max(1, parseInt(e.target.value) || 1))
+            }
+            className="w-full bg-gray-800 text-white px-3 py-2 rounded"
+            min="1"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-200">
+            Amplification
+          </label>
+          <input
+            type="number"
+            value={amplification}
+            onChange={(e) =>
+              setAmplification(Math.max(0.1, parseFloat(e.target.value) || 1))
+            }
+            className="w-full bg-gray-800 text-white px-3 py-2 rounded"
+            min="0.1"
+            step="0.1"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-200">
+            Max Bar Width (px)
+          </label>
+          <input
+            type="number"
+            value={maxBarWidth}
+            onChange={(e) =>
+              setMaxBarWidth(Math.max(1, parseInt(e.target.value) || 100))
+            }
+            className="w-full bg-gray-800 text-white px-3 py-2 rounded"
+            min="1"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-200">
+            Background Image
+          </label>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                  const img = new Image();
+                  img.onload = () => setBackgroundImage(img);
+                  img.src = e.target?.result as string;
+                };
+                reader.readAsDataURL(file);
+              }
+            }}
+            className="w-full bg-gray-800 text-white px-3 py-2 rounded file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-cyan-600 file:text-white hover:file:bg-cyan-700"
+          />
+        </div>
+
+        {backgroundImage && (
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-200">
+              Image Opacity (%)
+            </label>
+            <input
+              type="number"
+              value={imageOpacity}
+              onChange={(e) =>
+                setImageOpacity(
+                  Math.min(100, Math.max(0, parseInt(e.target.value) || 0)),
+                )
+              }
+              className="w-full bg-gray-800 text-white px-3 py-2 rounded"
+              min="0"
+              max="100"
+            />
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <button
+            onClick={() => setIsPlacingDetector(true)}
+            className="w-full bg-cyan-600 text-white px-3 py-2 rounded hover:bg-cyan-700 transition-colors"
+          >
+            Place Detector
+          </button>
+
+          <button
+            onClick={() => setReferenceLines([])}
+            className="w-full bg-red-600 text-white px-3 py-2 rounded hover:bg-red-700 transition-colors"
+          >
+            Clear Reference Lines
+          </button>
+
+          <button
+            onClick={() => setIsPlacingCompositeDetector(true)}
+            className="w-full bg-orange-600 text-white px-3 py-2 rounded hover:bg-orange-700 transition-colors"
+          >
+            Place Composite Detector
+          </button>
+
+          <button
+            onClick={() => setDetectors([])}
+            className="w-full bg-red-600 text-white px-3 py-2 rounded hover:bg-red-700 transition-colors"
+          >
+            Clear Detectors
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
