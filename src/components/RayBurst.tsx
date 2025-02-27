@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { CandlestickData } from "@/types/candlestick";
 
 interface Ray {
   angle: number;
@@ -20,6 +19,7 @@ interface ReferenceLine {
 
 interface Detector {
   x: number;
+  centerY: number;
   height: number;
   bins: number[];
   isComposite?: boolean;
@@ -34,19 +34,18 @@ export default function RayBurst() {
   const [numRays, setNumRays] = useState(12);
   const [backgroundImage, setBackgroundImage] =
     useState<HTMLImageElement | null>(null);
-  const [candlestickData, setCandlestickData] = useState<CandlestickData[]>([]);
-  const [showCandlesticks, setShowCandlesticks] = useState(false);
-  const [candlestickWidth, setCandlestickWidth] = useState(10);
-  const [candlestickSpacing, setCandlestickSpacing] = useState(5);
-  const [yAxisWidth] = useState(60);
-  const [xAxisHeight] = useState(30);
-  const [gridOpacity, setGridOpacity] = useState(0.2);
-  const [showGrid, setShowGrid] = useState(true);
+
   const [isPanning, setIsPanning] = useState(false);
+  const [isDraggingDetector, setIsDraggingDetector] = useState(false);
+  const [selectedDetectorIndex, setSelectedDetectorIndex] = useState<
+    number | null
+  >(null);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
 
   const [imageOpacity, setImageOpacity] = useState(100);
+  const [imageWidth, setImageWidth] = useState(100);
+  const [imageHeight, setImageHeight] = useState(100);
   // Store reference lines (CMD+click for horizontal, Shift+click for vertical)
   const [referenceLines, setReferenceLines] = useState<ReferenceLine[]>([]);
 
@@ -98,7 +97,9 @@ export default function RayBurst() {
   }, [numRays]);
 
   const [transparency, setTransparency] = useState(100);
-  const [binSize, setBinSize] = useState(10);
+  const [binOpacity, setBinOpacity] = useState(50);
+  const [numSlices, setNumSlices] = useState(100);
+  const [maxDetectorHeight] = useState(144000);
   const [amplification, setAmplification] = useState(1);
   const [maxBarWidth, setMaxBarWidth] = useState(100);
   const [detectors, setDetectors] = useState<Detector[]>([]);
@@ -163,6 +164,16 @@ export default function RayBurst() {
     return dx * dx + dy * dy <= CENTROID_RADIUS * CENTROID_RADIUS;
   };
 
+  const isPointNearDetectorCenter = (
+    px: number,
+    py: number,
+    detector: Detector,
+  ) => {
+    const dx = px - detector.x;
+    const dy = py - detector.centerY;
+    return dx * dx + dy * dy <= 25; // 5px radius squared
+  };
+
   const calculateIntersection = (
     ray: Ray,
     burst: RayBurst,
@@ -183,15 +194,20 @@ export default function RayBurst() {
   const updateDetectorBins = () => {
     setDetectors((prevDetectors) =>
       prevDetectors.map((detector) => {
-        const numBins = Math.ceil(detector.height / binSize);
-        const bins = new Array(numBins).fill(0);
+        const bins = new Array(numSlices).fill(0);
+        const detectorTop = detector.centerY - maxDetectorHeight / 2;
 
         rays.forEach((burst) => {
           burst.rays.forEach((ray) => {
             const intersectY = calculateIntersection(ray, burst, detector.x);
             if (intersectY === null) return;
 
-            const binIndex = Math.floor(intersectY / binSize);
+            // Calculate relative position within the detector's height
+            const relativeY = intersectY - detectorTop;
+            const binIndex = Math.floor(
+              (relativeY / maxDetectorHeight) * numSlices,
+            );
+
             if (binIndex >= 0 && binIndex < bins.length) {
               bins[binIndex]++;
             }
@@ -204,6 +220,10 @@ export default function RayBurst() {
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
     if (isPanning) {
       const dx = e.clientX - lastMousePos.x;
       const dy = e.clientY - lastMousePos.y;
@@ -211,12 +231,46 @@ export default function RayBurst() {
         x: prev.x + dx,
         y: prev.y + dy,
       }));
+    } else if (isDraggingDetector && selectedDetectorIndex !== null) {
+      setDetectors((prev) => {
+        const newDetectors = [...prev];
+        newDetectors[selectedDetectorIndex] = {
+          ...newDetectors[selectedDetectorIndex],
+          centerY: mouseY,
+        };
+        return newDetectors;
+      });
     }
+
     setLastMousePos({ x: e.clientX, y: e.clientY });
   };
 
+  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isPanning) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    // Check if we clicked on any detector center point
+    const clickedDetectorIndex = detectors.findIndex((detector) =>
+      isPointNearDetectorCenter(clickX, clickY, detector),
+    );
+
+    if (clickedDetectorIndex !== -1) {
+      setIsDraggingDetector(true);
+      setSelectedDetectorIndex(clickedDetectorIndex);
+      return;
+    }
+  };
+
+  const handleCanvasMouseUp = () => {
+    setIsDraggingDetector(false);
+    setSelectedDetectorIndex(null);
+  };
+
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isPanning) return; // Prevent clicks while panning
+    if (isPanning || isDraggingDetector) return; // Prevent clicks while panning or dragging
 
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
@@ -239,8 +293,9 @@ export default function RayBurst() {
         ...prev,
         {
           x: clickX,
-          height: canvas.height,
-          bins: new Array(Math.ceil(canvas.height / binSize)).fill(0),
+          centerY: clickY,
+          height: maxDetectorHeight,
+          bins: new Array(numSlices).fill(0),
           isComposite: isPlacingCompositeDetector,
         },
       ]);
@@ -283,7 +338,18 @@ export default function RayBurst() {
 
   useEffect(() => {
     updateDetectorBins();
-  }, [rays, binSize, detectors]);
+  }, [rays, numSlices, detectors.length]);
+
+  // Update bins when dragging a detector
+  useEffect(() => {
+    if (isDraggingDetector && selectedDetectorIndex !== null) {
+      updateDetectorBins();
+    }
+  }, [
+    isDraggingDetector,
+    selectedDetectorIndex,
+    detectors.map((d) => d.centerY).join(","),
+  ]); // This will trigger when any detector's centerY changes
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -292,121 +358,14 @@ export default function RayBurst() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Draw candlesticks if enabled
-    if (showCandlesticks && candlestickData.length > 0) {
-      const chartArea = {
-        x: yAxisWidth,
-        y: 0,
-        width: canvas.width - yAxisWidth,
-        height: canvas.height - xAxisHeight,
-      };
-
-      // Calculate visible candle range based on pan offset
-      const candleWidth = candlestickWidth + candlestickSpacing;
-      const startIndex = Math.max(0, Math.floor(-panOffset.x / candleWidth));
-      const endIndex = Math.min(
-        candlestickData.length,
-        Math.ceil((chartArea.width - panOffset.x) / candleWidth),
-      );
-      const visibleCandles = candlestickData.slice(startIndex, endIndex);
-
-      // Calculate price range from visible candles
-      const maxPrice = Math.max(...visibleCandles.map((d) => d.high));
-      const minPrice = Math.min(...visibleCandles.map((d) => d.low));
-      const priceRange = maxPrice - minPrice;
-      const heightScale = chartArea.height / priceRange;
-
-      // Draw grid if enabled
-      if (showGrid) {
-        ctx.strokeStyle = `rgba(255, 255, 255, ${gridOpacity})`;
-        ctx.lineWidth = 1;
-
-        // Vertical grid lines (time)
-        const timeInterval = Math.ceil(visibleCandles.length / 10); // Show ~10 lines
-        for (let i = startIndex; i < endIndex; i += timeInterval) {
-          const x = chartArea.x + i * candleWidth;
-          ctx.beginPath();
-          ctx.moveTo(x, 0);
-          ctx.lineTo(x, chartArea.height);
-          ctx.stroke();
-        }
-
-        // Horizontal grid lines (price)
-        const priceInterval = priceRange / 10; // Show 10 lines
-        for (let price = minPrice; price <= maxPrice; price += priceInterval) {
-          const y = chartArea.height - (price - minPrice) * heightScale;
-          ctx.beginPath();
-          ctx.moveTo(chartArea.x, y);
-          ctx.lineTo(canvas.width, y);
-          ctx.stroke();
-        }
-      }
-
-      // Draw Y-axis (price)
-      ctx.fillStyle = "white";
-      ctx.textAlign = "right";
-      ctx.textBaseline = "middle";
-      ctx.font = "12px monospace";
-
-      const priceInterval = priceRange / 10;
-      for (let price = minPrice; price <= maxPrice; price += priceInterval) {
-        const y = chartArea.height - (price - minPrice) * heightScale;
-        ctx.fillText(price.toFixed(2), chartArea.x - 5, y);
-      }
-
-      // Draw X-axis (time)
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-      const timeInterval = Math.ceil(visibleCandles.length / 10);
-      for (let i = startIndex; i < endIndex; i += timeInterval) {
-        const x = chartArea.x + i * candleWidth;
-        const date = new Date(candlestickData[i].time * 1000);
-        const timeStr = date.toLocaleTimeString();
-        ctx.fillText(timeStr, x, chartArea.height + 5);
-      }
-      ctx.save();
-      ctx.translate(panOffset.x, panOffset.y);
-
-      // Apply chart area offset
-      ctx.translate(chartArea.x, 0);
-
-      candlestickData.forEach((candle, i) => {
-        const x = i * (candlestickWidth + candlestickSpacing);
-
-        // Draw the wick
-        ctx.beginPath();
-        ctx.strokeStyle = "white";
-        ctx.moveTo(
-          x + candlestickWidth / 2,
-          canvas.height - (candle.high - minPrice) * heightScale,
-        );
-        ctx.lineTo(
-          x + candlestickWidth / 2,
-          canvas.height - (candle.low - minPrice) * heightScale,
-        );
-        ctx.stroke();
-
-        // Draw the body
-        const isGreen = candle.close >= candle.open;
-        ctx.fillStyle = isGreen
-          ? "rgba(0, 255, 0, 0.5)"
-          : "rgba(255, 0, 0, 0.5)";
-        const bodyTop =
-          canvas.height -
-          (Math.max(candle.open, candle.close) - minPrice) * heightScale;
-        const bodyBottom =
-          canvas.height -
-          (Math.min(candle.open, candle.close) - minPrice) * heightScale;
-        ctx.fillRect(x, bodyTop, candlestickWidth, bodyBottom - bodyTop);
-      });
-
-      ctx.restore();
-    }
-
     // Draw background image if exists
     if (backgroundImage) {
       ctx.globalAlpha = imageOpacity / 100;
-      ctx.drawImage(backgroundImage, 0, 0, canvas.width, canvas.height);
+      const width = (canvas.width * imageWidth) / 100;
+      const height = (canvas.height * imageHeight) / 100;
+      const x = (canvas.width - width) / 2;
+      const y = (canvas.height - height) / 2;
+      ctx.drawImage(backgroundImage, x, y, width, height);
       ctx.globalAlpha = 1;
     }
 
@@ -458,9 +417,7 @@ export default function RayBurst() {
         const leftDetectors = detectors.filter(
           (d) => d.x < detector.x && !d.isComposite,
         );
-        const combinedBins = new Array(
-          Math.ceil(detector.height / binSize),
-        ).fill(0);
+        const combinedBins = new Array(numSlices).fill(0);
 
         leftDetectors.forEach((leftDetector) => {
           leftDetector.bins.forEach((value, index) => {
@@ -470,77 +427,116 @@ export default function RayBurst() {
           });
         });
 
+        // Find the global maximum intensity across all bins
         const maxIntensity = Math.max(...combinedBins, 1);
+        // Calculate the maximum bar width based on the highest intensity bin
+        const globalMaxBarWidth = Math.min(
+          maxBarWidth,
+          maxIntensity * amplification,
+        );
 
         combinedBins.forEach((intensity, i) => {
-          const normalizedIntensity = Math.min(
-            1,
-            (intensity / maxIntensity) * amplification,
-          );
-          const barWidth = normalizedIntensity * maxBarWidth;
+          // Use the raw intensity value directly, scaled to the max width
+          const barWidth =
+            intensity > 0 ? (intensity / maxIntensity) * globalMaxBarWidth : 0;
+          const binSize = maxDetectorHeight / numSlices;
+          const detectorTop = detector.centerY - maxDetectorHeight / 2;
 
           // Draw the vertical detector line in a different color for composite
-          ctx.fillStyle = `rgba(255, 165, 0, 0.5)`; // Orange for composite
+          ctx.fillStyle = `rgba(255, 165, 0, ${binOpacity / 100})`; // Orange for composite
           ctx.fillRect(
             detector.x - DETECTOR_WIDTH / 2,
-            i * binSize,
+            detectorTop + i * binSize,
             DETECTOR_WIDTH,
             binSize,
           );
 
-          // Draw the intensity bar
-          ctx.fillStyle = `rgba(255, 165, 0, ${normalizedIntensity})`;
+          // Draw the intensity bar with opacity based on relative intensity
+          const opacity =
+            intensity > 0 ? Math.min(1, intensity / maxIntensity) : 0;
+          ctx.fillStyle = `rgba(255, 165, 0, ${opacity})`;
           ctx.fillRect(
             detector.x + DETECTOR_WIDTH / 2,
-            i * binSize,
+            detectorTop + i * binSize,
             barWidth,
             binSize,
           );
         });
+
+        // Draw center point indicator with a larger, draggable appearance
+        ctx.beginPath();
+        ctx.arc(detector.x, detector.centerY, 5, 0, Math.PI * 2);
+        ctx.fillStyle = "white";
+        ctx.fill();
+
+        // Add a border to make it more visible
+        ctx.beginPath();
+        ctx.arc(detector.x, detector.centerY, 5, 0, Math.PI * 2);
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 1;
+        ctx.stroke();
       } else {
+        // Find the global maximum intensity across all bins
         const maxIntensity = Math.max(...detector.bins, 1);
+        // Calculate the maximum bar width based on the highest intensity bin
+        const globalMaxBarWidth = Math.min(
+          maxBarWidth,
+          maxIntensity * amplification,
+        );
 
         detector.bins.forEach((intensity, i) => {
-          const normalizedIntensity = Math.min(
-            1,
-            (intensity / maxIntensity) * amplification,
-          );
-          const barWidth = normalizedIntensity * maxBarWidth;
+          // Use the raw intensity value directly, scaled to the max width
+          const barWidth =
+            intensity > 0 ? (intensity / maxIntensity) * globalMaxBarWidth : 0;
+          const binSize = maxDetectorHeight / numSlices;
+          const detectorTop = detector.centerY - maxDetectorHeight / 2;
 
           // Draw the vertical detector line
-          ctx.fillStyle = `rgba(0, 255, 255, 0.5)`;
+          ctx.fillStyle = `rgba(0, 255, 255, ${binOpacity / 100})`;
           ctx.fillRect(
             detector.x - DETECTOR_WIDTH / 2,
-            i * binSize,
+            detectorTop + i * binSize,
             DETECTOR_WIDTH,
             binSize,
           );
 
-          // Draw the intensity bar
-          ctx.fillStyle = `rgba(0, 255, 255, ${normalizedIntensity})`;
+          // Draw the intensity bar with opacity based on relative intensity
+          const opacity =
+            intensity > 0 ? Math.min(1, intensity / maxIntensity) : 0;
+          ctx.fillStyle = `rgba(0, 255, 255, ${opacity})`;
           ctx.fillRect(
             detector.x + DETECTOR_WIDTH / 2,
-            i * binSize,
+            detectorTop + i * binSize,
             barWidth,
             binSize,
           );
         });
+
+        // Draw center point indicator with a larger, draggable appearance
+        ctx.beginPath();
+        ctx.arc(detector.x, detector.centerY, 5, 0, Math.PI * 2);
+        ctx.fillStyle = "white";
+        ctx.fill();
+
+        // Add a border to make it more visible
+        ctx.beginPath();
+        ctx.arc(detector.x, detector.centerY, 5, 0, Math.PI * 2);
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 1;
+        ctx.stroke();
       }
     });
   }, [
     rays,
     transparency,
     detectors,
-    binSize,
+    numSlices,
     amplification,
     maxBarWidth,
     backgroundImage,
     imageOpacity,
     referenceLines,
-    candlestickData,
-    showCandlesticks,
-    candlestickWidth,
-    candlestickSpacing,
+    binOpacity,
     panOffset,
   ]);
 
@@ -550,8 +546,11 @@ export default function RayBurst() {
         <canvas
           ref={canvasRef}
           onClick={handleCanvasClick}
+          onMouseDown={handleCanvasMouseDown}
+          onMouseUp={handleCanvasMouseUp}
+          onMouseLeave={handleCanvasMouseUp}
           onMouseMove={handleCanvasMouseMove}
-          className={`absolute inset-0 w-full h-full bg-black ${isPanning ? "cursor-move" : "cursor-crosshair"}`}
+          className={`absolute inset-0 w-full h-full bg-black ${isPanning ? "cursor-move" : isDraggingDetector ? "cursor-ns-resize" : "cursor-crosshair"}`}
         />
       </div>
       <div className="w-64 bg-gray-900 p-4 flex flex-col gap-4 border-l border-gray-800 overflow-y-auto">
@@ -572,7 +571,7 @@ export default function RayBurst() {
 
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-200">
-            Opacity (%)
+            Ray Opacity (%)
           </label>
           <input
             type="number"
@@ -590,13 +589,31 @@ export default function RayBurst() {
 
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-200">
-            Bin Size (px)
+            Bin Opacity (%)
           </label>
           <input
             type="number"
-            value={binSize}
+            value={binOpacity}
             onChange={(e) =>
-              setBinSize(Math.max(1, parseInt(e.target.value) || 1))
+              setBinOpacity(
+                Math.min(100, Math.max(0, parseInt(e.target.value) || 0)),
+              )
+            }
+            className="w-full bg-gray-800 text-white px-3 py-2 rounded"
+            min="0"
+            max="100"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-200">
+            Number of Detector Slices (144000 units tall)
+          </label>
+          <input
+            type="number"
+            value={numSlices}
+            onChange={(e) =>
+              setNumSlices(Math.max(1, parseInt(e.target.value) || 1))
             }
             className="w-full bg-gray-800 text-white px-3 py-2 rounded"
             min="1"
@@ -621,7 +638,7 @@ export default function RayBurst() {
 
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-200">
-            Max Bar Width (px)
+            Max Bar Width (px) - Scales with highest bin count
           </label>
           <input
             type="number"
@@ -658,23 +675,61 @@ export default function RayBurst() {
         </div>
 
         {backgroundImage && (
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-200">
-              Image Opacity (%)
-            </label>
-            <input
-              type="number"
-              value={imageOpacity}
-              onChange={(e) =>
-                setImageOpacity(
-                  Math.min(100, Math.max(0, parseInt(e.target.value) || 0)),
-                )
-              }
-              className="w-full bg-gray-800 text-white px-3 py-2 rounded"
-              min="0"
-              max="100"
-            />
-          </div>
+          <>
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-200">
+                Image Opacity (%)
+              </label>
+              <input
+                type="number"
+                value={imageOpacity}
+                onChange={(e) =>
+                  setImageOpacity(
+                    Math.min(100, Math.max(0, parseInt(e.target.value) || 0)),
+                  )
+                }
+                className="w-full bg-gray-800 text-white px-3 py-2 rounded"
+                min="0"
+                max="100"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-200">
+                Image Width (%)
+              </label>
+              <input
+                type="number"
+                value={imageWidth}
+                onChange={(e) =>
+                  setImageWidth(
+                    Math.min(200, Math.max(1, parseInt(e.target.value) || 100)),
+                  )
+                }
+                className="w-full bg-gray-800 text-white px-3 py-2 rounded"
+                min="1"
+                max="200"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-200">
+                Image Height (%)
+              </label>
+              <input
+                type="number"
+                value={imageHeight}
+                onChange={(e) =>
+                  setImageHeight(
+                    Math.min(200, Math.max(1, parseInt(e.target.value) || 100)),
+                  )
+                }
+                className="w-full bg-gray-800 text-white px-3 py-2 rounded"
+                min="1"
+                max="200"
+              />
+            </div>
+          </>
         )}
 
         <div className="space-y-4">
@@ -706,128 +761,12 @@ export default function RayBurst() {
             Clear Detectors
           </button>
 
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-200">
-              Candlestick Data
-            </label>
-            <input
-              type="file"
-              accept=".csv"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  const reader = new FileReader();
-                  reader.onload = (e) => {
-                    const text = e.target?.result as string;
-                    const lines = text.split("\n");
-                    const headers = lines[0].split(",");
-                    const data: CandlestickData[] = [];
-
-                    for (let i = 1; i < lines.length; i++) {
-                      const values = lines[i].split(",");
-                      if (values.length === 5) {
-                        data.push({
-                          time: parseInt(values[0]),
-                          open: parseFloat(values[1]),
-                          high: parseFloat(values[2]),
-                          low: parseFloat(values[3]),
-                          close: parseFloat(values[4]),
-                        });
-                      }
-                    }
-
-                    setCandlestickData(data);
-                    setShowCandlesticks(true);
-                  };
-                  reader.readAsText(file);
-                }
-              }}
-              className="w-full bg-gray-800 text-white px-3 py-2 rounded file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-cyan-600 file:text-white hover:file:bg-cyan-700"
-            />
-          </div>
-
-          {candlestickData.length > 0 && (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-200">
-                  Show Candlesticks
-                </label>
-                <input
-                  type="checkbox"
-                  checked={showCandlesticks}
-                  onChange={(e) => setShowCandlesticks(e.target.checked)}
-                  className="w-4 h-4"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-200">
-                  Candlestick Width
-                </label>
-                <input
-                  type="number"
-                  value={candlestickWidth}
-                  onChange={(e) =>
-                    setCandlestickWidth(
-                      Math.max(1, parseInt(e.target.value) || 1),
-                    )
-                  }
-                  className="w-full bg-gray-800 text-white px-3 py-2 rounded"
-                  min="1"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-200">
-                  Candlestick Spacing
-                </label>
-                <input
-                  type="number"
-                  value={candlestickSpacing}
-                  onChange={(e) =>
-                    setCandlestickSpacing(
-                      Math.max(0, parseInt(e.target.value) || 0),
-                    )
-                  }
-                  className="w-full bg-gray-800 text-white px-3 py-2 rounded"
-                  min="0"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-200">
-                  Show Grid
-                </label>
-                <input
-                  type="checkbox"
-                  checked={showGrid}
-                  onChange={(e) => setShowGrid(e.target.checked)}
-                  className="w-4 h-4"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-200">
-                  Grid Opacity
-                </label>
-                <input
-                  type="number"
-                  value={gridOpacity * 100}
-                  onChange={(e) =>
-                    setGridOpacity(
-                      Math.min(
-                        1,
-                        Math.max(0, parseInt(e.target.value) || 0) / 100,
-                      ),
-                    )
-                  }
-                  className="w-full bg-gray-800 text-white px-3 py-2 rounded"
-                  min="0"
-                  max="100"
-                />
-              </div>
-            </div>
-          )}
+          <button
+            onClick={() => setRays([])}
+            className="w-full bg-red-600 text-white px-3 py-2 rounded hover:bg-red-700 transition-colors"
+          >
+            Clear Sunbursts
+          </button>
         </div>
       </div>
     </div>

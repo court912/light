@@ -1,7 +1,1 @@
-export interface CandlestickData {
-  time: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-}
+// Placeholder file - can be removed if not needed
