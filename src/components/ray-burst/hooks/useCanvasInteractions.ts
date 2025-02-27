@@ -73,6 +73,7 @@ export const useCanvasInteractions = () => {
   const findReferenceLineAtPoint = useCallback(
     (x: number, y: number, referenceLines: ReferenceLine[]): number => {
       return referenceLines.findIndex((line) => {
+        // Use the stored x,y coordinates of the reference line, not adjusted for panning
         const dx = x - line.x;
         const dy = y - line.y;
         return dx * dx + dy * dy <= CONSTANTS.HOVER_DETECTION_RADIUS_SQUARED;
@@ -108,8 +109,15 @@ export const useCanvasInteractions = () => {
    */
   const findRayBurstAtPoint = useCallback(
     (x: number, y: number, rays: RayBurst[]): number => {
-      return rays.findIndex((burst) =>
-        isPointInCircle(x, y, burst.x, burst.y, CONSTANTS.CENTROID_RADIUS),
+      return rays.findIndex(
+        (burst) =>
+          isPointInCircle(
+            x,
+            y,
+            burst.x,
+            burst.y,
+            CONSTANTS.CENTROID_RADIUS * 3,
+          ), // Increased detection radius even more
       );
     },
     [],

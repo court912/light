@@ -42,14 +42,19 @@ export const renderRays = (
  * @param referenceLines - Array of reference lines to render
  * @param canvasWidth - Width of the canvas
  * @param canvasHeight - Height of the canvas
+ * @param chartOffset - Current chart offset due to panning
  */
 export const renderReferenceLines = (
   ctx: CanvasRenderingContext2D,
   referenceLines: ReferenceLine[],
   canvasWidth: number,
   canvasHeight: number,
+  chartOffset = { x: 0, y: 0 },
 ) => {
   referenceLines.forEach((line) => {
+    // Apply chart offset to reference line position for rendering
+    const adjustedX = line.x + chartOffset.x;
+
     ctx.beginPath();
     ctx.strokeStyle = "white";
     ctx.lineWidth = 2;
@@ -60,15 +65,15 @@ export const renderReferenceLines = (
       ctx.lineTo(canvasWidth, line.y);
     } else {
       // Draw vertical reference line
-      ctx.moveTo(line.x, 0);
-      ctx.lineTo(line.x, canvasHeight);
+      ctx.moveTo(adjustedX, 0);
+      ctx.lineTo(adjustedX, canvasHeight);
     }
 
     ctx.stroke();
 
     // Draw a delete dot at the reference line's origin point
     ctx.beginPath();
-    ctx.arc(line.x, line.y, CONSTANTS.DELETE_DOT_RADIUS, 0, Math.PI * 2);
+    ctx.arc(adjustedX, line.y, CONSTANTS.DELETE_DOT_RADIUS, 0, Math.PI * 2);
     ctx.fillStyle = "yellow";
     ctx.fill();
     ctx.strokeStyle = "white";
