@@ -1,149 +1,164 @@
-# Understanding Bin Height and Ray Hit Calculations
+# Understanding Detector Lines and Bin Calculations
 
-## Basic Concepts
+## Detector Line Basics
 
-When a ray hits a detector line, we need to:
-1. Determine which bin it belongs to
-2. Calculate how that hit affects the bin's intensity
-3. Visualize the intensity through color and height
+In our ray-tracing visualization system, detector lines are vertical lines that record where rays intersect with them. Each detector line:
 
-### Step 1: Determining Bin Location
+1. Has a fixed position along the x-axis
+2. Has a center point that can be dragged up and down
+3. Has a fixed height (144,000 pixels total - extending 72,000 pixels above and below the center)
+4. Is divided into a configurable number of equal-sized bins
 
-```javascript
-// Example: If we have a detector line of length 288000 pixels (144000 each direction)
-// and 360 bins, each bin represents 800 pixels of the line
-const binWidth = totalLineLength / binCount;  // 288000 / 360 = 800 pixels per bin
+## Bin System
 
-// When a ray hits at position 2400 on the line:
-const binIndex = Math.floor(2400 / 800);  // = 3 (fourth bin)
-```
-
-### Step 2: Accumulating Hits
-
-Each bin keeps track of how many rays hit it:
+Each detector line is divided into bins that count ray hits:
 
 ```javascript
-const bins = new Array(binCount).fill(0);  // Start with all bins at 0
-
-// When a ray hits bin 3
-bins[3]++;  // Increment the hit counter for that bin
+// If we have a detector height of 144000 pixels and 100 bins
+// each bin represents 1440 pixels of the detector line
+const binSize = maxDetectorHeight / numSlices;  // 144000 / 100 = 1440 pixels per bin
 ```
 
-### Intensity Calculation
+### How Bins Work
 
-The intensity of each bin is relative to the bin with the most hits:
+1. **Bin Creation**: When a detector is placed, we create an array of bins initialized to zero:
+   ```javascript
+   const bins = new Array(numSlices).fill(0);
+   ```
+
+2. **Determining Bin Location**: When a ray hits the detector, we calculate which bin it belongs to:
+   ```javascript
+   // Calculate the top of the detector
+   const detectorTop = detector.centerY - maxDetectorHeight / 2;
+   
+   // When a ray hits at position intersectY on the detector:
+   const relativeY = intersectY - detectorTop;
+   const binIndex = Math.floor((relativeY / maxDetectorHeight) * numSlices);
+   ```
+
+3. **Accumulating Hits**: Each bin keeps track of how many rays hit it:
+   ```javascript
+   // When a ray hits the calculated bin
+   if (binIndex >= 0 && binIndex < bins.length) {
+     bins[binIndex]++;
+   }
+   ```
+
+## Intensity and Visualization Calculations
+
+### Bar Width Calculation
+
+The width of each bin's visualization bar is calculated based on:
+
+1. The raw hit count for that bin
+2. The maximum hit count across all bins
+3. The amplification factor (user-configurable)
+4. The maximum bar width (user-configurable)
 
 ```javascript
 // Find the bin with the most hits
-const maxHits = Math.max(...bins);
+const maxIntensity = Math.max(...bins, 1); // Minimum of 1 to avoid division by zero
 
-// Calculate intensity for each bin (0 to 1)
-const intensities = bins.map(hits => hits / maxHits);
+// Calculate the maximum possible bar width
+const globalMaxBarWidth = Math.min(maxBarWidth, maxIntensity * amplification);
+
+// For each bin, calculate its bar width
+const barWidth = intensity > 0 ? (intensity / maxIntensity) * globalMaxBarWidth : 0;
 ```
 
-## Value Area Percentage
+### Color Intensity
 
-The "Value Area %" setting helps identify significant bins:
+The opacity of each bin's visualization is directly proportional to its relative intensity:
 
 ```javascript
-// If Value Area % is set to 70
-const valueAreaThreshold = maxHits * (70 / 100);
+// Calculate opacity for color intensity
+const opacity = intensity > 0 ? Math.min(1, intensity / maxIntensity) : 0;
 
-// A bin is considered significant if:
-const isSignificant = binHits > valueAreaThreshold;
+// Use this opacity in the color
+ctx.fillStyle = `rgba(0, 255, 255, ${opacity})`; // For regular detectors
+// or
+ctx.fillStyle = `rgba(255, 165, 0, ${opacity})`; // For composite detectors
 ```
 
-## Visualization
+## Composite Detectors
 
-### Color Mapping
+Composite detectors (orange) combine data from all regular detectors (cyan) to their left:
 
-We map the intensity to a color scale:
+1. **Data Collection**: When a composite detector is drawn, it finds all regular detectors to its left:
+   ```javascript
+   const leftDetectors = detectors.filter(d => d.x < detector.x && !d.isComposite);
+   ```
 
-```javascript
-function getColorForIntensity(intensity) {
-  // Convert intensity (0-1) to RGB
-  const red = Math.round(intensity * 255);
-  return `rgb(${red}, 0, 0)`;  // Brighter red = more hits
-}
-```
+2. **Bin Combination**: It then combines the bin data from all those detectors:
+   ```javascript
+   const combinedBins = new Array(numSlices).fill(0);
+   
+   leftDetectors.forEach(leftDetector => {
+     leftDetector.bins.forEach((value, index) => {
+       if (index < combinedBins.length) {
+         combinedBins[index] += value;
+       }
+     });
+   });
+   ```
 
-### Example Scenarios
+3. **Visualization**: The combined data is then visualized using the same principles as regular detectors, but with orange coloring instead of cyan.
+
+## Example Scenarios
 
 1. **Single Ray Hit**
    ```javascript
    // One ray hits bin 5
    bins[5] = 1;
-   maxHits = 1;
-   intensity = 1;  // Full intensity for this bin
+   maxIntensity = 1;
+   barWidth = maxBarWidth * 1; // Full width
+   opacity = 1;  // Full opacity
    ```
 
 2. **Multiple Hits in Same Bin**
    ```javascript
    // Three rays hit bin 5
    bins[5] = 3;
-   maxHits = 3;
-   intensity = 1;  // Still full intensity
+   maxIntensity = 3;
+   barWidth = maxBarWidth * 1; // Still full width (it's the max)
+   opacity = 1;  // Still full opacity
    ```
 
 3. **Multiple Bins with Different Hits**
    ```javascript
    bins = [1, 3, 2, 4, 1];
-   maxHits = 4;
-   intensities = [0.25, 0.75, 0.5, 1, 0.25];
+   maxIntensity = 4;
+   
+   // For bin with 1 hit:
+   barWidth = maxBarWidth * 0.25; // 25% of max width
+   opacity = 0.25; // 25% opacity
+   
+   // For bin with 4 hits:
+   barWidth = maxBarWidth * 1; // 100% of max width
+   opacity = 1; // 100% opacity
    ```
 
-## Practical Example
+## Amplification Effect
 
-Let's walk through a complete example:
+The amplification setting multiplies the raw hit counts before calculating bar widths:
 
 ```javascript
-// Setup
-const binCount = 360;
-const lineLength = 288000;  // 144000 * 2
-const bins = new Array(binCount).fill(0);
-const binWidth = lineLength / binCount;
+// With amplification = 2
+const globalMaxBarWidth = Math.min(maxBarWidth, maxIntensity * 2);
 
-// Recording hits
-function recordHit(position) {
-  const binIndex = Math.floor(position / binWidth);
-  if (binIndex >= 0 && binIndex < binCount) {
-    bins[binIndex]++;
-  }
-}
-
-// Some ray hits
-recordHit(800);   // Hits bin 1
-recordHit(850);   // Also hits bin 1
-recordHit(1600);  // Hits bin 2
-
-// Calculate intensities
-const maxHits = Math.max(...bins);  // = 2 (bin 1 has 2 hits)
-const intensities = bins.map(hits => hits / maxHits);
-// intensities[1] = 1.0 (2/2)
-// intensities[2] = 0.5 (1/2)
-// other bins = 0
+// This can make bars wider, but is limited by maxBarWidth
 ```
 
-## Tips for Understanding
+## Practical Considerations
 
-1. **Bin Width vs. Hit Count**
-   - Bin width determines which hits go into which bins
-   - Hit count determines the intensity of each bin
-   - These are independent calculations
+1. **Detector Placement**: Place detectors strategically to capture ray intersections of interest
 
-2. **Relative vs. Absolute Values**
-   - Intensities are always relative to the maximum hits
-   - A bin with 2 hits could be full intensity if it's the maximum
-   - The same bin could be half intensity if another bin has 4 hits
+2. **Bin Count**: More bins (slices) give higher resolution but may dilute the hit count per bin
 
-3. **Value Area Percentage Effect**
-   - Higher percentage = fewer bins shown as significant
-   - Lower percentage = more subtle variations visible
-   - Example: At 70%, only bins with >70% of max hits are highlighted
+3. **Amplification**: Use amplification to make subtle patterns more visible
 
-4. **Performance Considerations**
-   - Bin calculations happen in real-time as rays hit
-   - We store raw hit counts and calculate intensities when needed
-   - This allows for dynamic updates to visualization settings
+4. **Composite Detectors**: Use these to see the combined effect of multiple detectors
 
-Remember: The bin system is essentially a histogram, counting hits in fixed-width segments of the detector line, then normalizing those counts for visualization.
+5. **Draggable Centers**: Adjust detector centers to align with features of interest
+
+Remember: The bin system is essentially a histogram along the vertical axis of each detector, counting ray intersections and visualizing their distribution.
