@@ -398,37 +398,55 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
     }
 
     if (showReferenceLines) {
-      renderReferenceLines(ctx, referenceLines, width, height, chartOffset);
-
-      // Draw price labels for horizontal reference lines on the Y axis
-      referenceLines.forEach((line) => {
-        if (line.isHorizontal) {
-          // Calculate the price at this Y position
+      // First, find horizontal reference lines and calculate their prices
+      const horizontalLines = referenceLines
+        .filter((line) => line.isHorizontal)
+        .map((line) => {
           const yPosition = line.y;
           const price =
             yRange.max -
             ((yPosition - (originY - chartHeight)) / chartHeight) *
               (yRange.max - yRange.min);
+          return { ...line, price };
+        });
 
-          // Draw price label on Y axis with background
-          const priceText = formatPrice(price);
-          ctx.font = "bold 12px Arial";
-          const textWidth = ctx.measureText(priceText).width;
+      // Sort horizontal lines by price
+      horizontalLines.sort((a, b) => a.price - b.price);
 
-          // Draw background rectangle
-          ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-          ctx.fillRect(
-            originX - textWidth - 15,
-            yPosition - 8,
-            textWidth + 10,
-            16,
-          );
+      // Find pairs of lines that are within 10 points of each other
+      for (let i = 0; i < horizontalLines.length - 1; i++) {
+        const currentLine = horizontalLines[i];
+        const nextLine = horizontalLines[i + 1];
 
-          // Draw text
-          ctx.fillStyle = "yellow";
-          ctx.textAlign = "right";
-          ctx.fillText(priceText, originX - 10, yPosition + 4);
+        if (Math.abs(nextLine.price - currentLine.price) <= 10) {
+          // Shade the area between these two lines
+          const topY = Math.min(currentLine.y, nextLine.y);
+          const bottomY = Math.max(currentLine.y, nextLine.y);
+
+          // Draw a semi-transparent purple rectangle across the chart
+          ctx.fillStyle = "rgba(128, 0, 128, 0.2)";
+          ctx.fillRect(originX, topY, chartWidth, bottomY - topY);
         }
+      }
+
+      // Now render the reference lines on top of the shaded areas
+      renderReferenceLines(ctx, referenceLines, width, height, chartOffset);
+
+      // Draw price labels for horizontal reference lines on the Y axis
+      horizontalLines.forEach((line) => {
+        // Draw price label on Y axis with background
+        const priceText = formatPrice(line.price);
+        ctx.font = "bold 12px Arial";
+        const textWidth = ctx.measureText(priceText).width;
+
+        // Draw background rectangle
+        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+        ctx.fillRect(originX - textWidth - 15, line.y - 8, textWidth + 10, 16);
+
+        // Draw text
+        ctx.fillStyle = "yellow";
+        ctx.textAlign = "right";
+        ctx.fillText(priceText, originX - 10, line.y + 4);
       });
     }
 
