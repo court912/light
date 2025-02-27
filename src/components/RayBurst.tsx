@@ -36,6 +36,8 @@ export default function RayBurst() {
     useState<HTMLImageElement | null>(null);
 
   const [isPanning, setIsPanning] = useState(false);
+  const [isHorizontalRefLine, setIsHorizontalRefLine] = useState(false);
+  const [isVerticalRefLine, setIsVerticalRefLine] = useState(false);
   const [isDraggingDetector, setIsDraggingDetector] = useState(false);
   const [selectedDetectorIndex, setSelectedDetectorIndex] = useState<
     number | null
@@ -49,18 +51,40 @@ export default function RayBurst() {
   // Store reference lines (CMD+click for horizontal, Shift+click for vertical)
   const [referenceLines, setReferenceLines] = useState<ReferenceLine[]>([]);
 
-  // Handle space key for panning
+  // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Space") {
         e.preventDefault();
         setIsPanning(true);
       }
+
+      // Store H key state for horizontal reference lines
+      if (e.code === "KeyH") {
+        e.preventDefault();
+        setIsHorizontalRefLine(true);
+      }
+
+      // Store V key state for vertical reference lines
+      if (e.code === "KeyV") {
+        e.preventDefault();
+        setIsVerticalRefLine(true);
+      }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.code === "Space") {
         setIsPanning(false);
+      }
+
+      // Clear H key state
+      if (e.code === "KeyH") {
+        setIsHorizontalRefLine(false);
+      }
+
+      // Clear V key state
+      if (e.code === "KeyV") {
+        setIsVerticalRefLine(false);
       }
     };
 
@@ -170,7 +194,8 @@ export default function RayBurst() {
     py: number,
     detector: Detector,
   ) => {
-    const dx = px - detector.x;
+    // Check if point is near the move handle (offset from center)
+    const dx = px - (detector.x + 15);
     const dy = py - detector.centerY;
     return dx * dx + dy * dy <= 25; // 5px radius squared
   };
@@ -224,6 +249,35 @@ export default function RayBurst() {
     const rect = e.currentTarget.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
+
+    // Check if hovering over any reference line delete dot or ray centroid
+    const isHoveringRefDot = referenceLines.some((line) => {
+      const dx = mouseX - line.x;
+      const dy = mouseY - line.y;
+      return dx * dx + dy * dy <= 36; // 6px radius squared
+    });
+
+    // Check if hovering over detector delete dot
+    const isHoveringDetectorDot = detectors.some((detector) => {
+      const dx = mouseX - detector.x;
+      const dy = mouseY - detector.centerY;
+      return dx * dx + dy * dy <= 36; // 6px radius squared
+    });
+
+    const isHoveringRayCentroid = rays.some((burst) =>
+      isPointInCircle(mouseX, mouseY, burst.x, burst.y),
+    );
+
+    // Change cursor style based on what we're hovering
+    if (isHoveringRefDot || isHoveringRayCentroid || isHoveringDetectorDot) {
+      e.currentTarget.style.cursor = "grab";
+    } else if (isPanning) {
+      e.currentTarget.style.cursor = "move";
+    } else if (isDraggingDetector) {
+      e.currentTarget.style.cursor = "ns-resize";
+    } else {
+      e.currentTarget.style.cursor = "crosshair";
+    }
 
     if (isPanning) {
       const dx = e.clientX - lastMousePos.x;
@@ -286,11 +340,41 @@ export default function RayBurst() {
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
 
-    // Handle reference lines (CMD/Shift + click)
-    if (e.metaKey || e.shiftKey) {
+    // Check if we clicked on a reference line delete dot
+    const clickedRefLineIndex = referenceLines.findIndex((line) => {
+      const dx = clickX - line.x;
+      const dy = clickY - line.y;
+      return dx * dx + dy * dy <= 36; // 6px radius squared
+    });
+
+    if (clickedRefLineIndex !== -1) {
+      // Remove the clicked reference line
+      setReferenceLines((prev) =>
+        prev.filter((_, index) => index !== clickedRefLineIndex),
+      );
+      return;
+    }
+
+    // Check if we clicked on a detector delete dot
+    const clickedDetectorIndex = detectors.findIndex((detector) => {
+      const dx = clickX - detector.x;
+      const dy = clickY - detector.centerY;
+      return dx * dx + dy * dy <= 36; // 6px radius squared
+    });
+
+    if (clickedDetectorIndex !== -1) {
+      // Remove the clicked detector
+      setDetectors((prev) =>
+        prev.filter((_, index) => index !== clickedDetectorIndex),
+      );
+      return;
+    }
+
+    // Handle reference lines (H key for horizontal, V key for vertical)
+    if (isHorizontalRefLine || isVerticalRefLine) {
       setReferenceLines((prev) => [
         ...prev,
-        { x: clickX, y: clickY, isHorizontal: e.metaKey },
+        { x: clickX, y: clickY, isHorizontal: isHorizontalRefLine },
       ]);
       return;
     }
@@ -397,11 +481,14 @@ export default function RayBurst() {
 
       ctx.beginPath();
       ctx.arc(burst.x, burst.y, CENTROID_RADIUS, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255, 0, 0, ${alpha})`;
+      ctx.fillStyle = `rgba(255, 255, 0, ${alpha})`;
       ctx.fill();
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 1;
+      ctx.stroke();
     });
 
-    // Draw reference lines
+    // Draw reference lines with delete dots
     referenceLines.forEach((line) => {
       ctx.beginPath();
       ctx.strokeStyle = "white";
@@ -417,6 +504,15 @@ export default function RayBurst() {
         ctx.lineTo(line.x, canvas.height);
       }
 
+      ctx.stroke();
+
+      // Draw a delete dot at the reference line's origin point
+      ctx.beginPath();
+      ctx.arc(line.x, line.y, 6, 0, Math.PI * 2);
+      ctx.fillStyle = "yellow";
+      ctx.fill();
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 1;
       ctx.stroke();
     });
 
@@ -512,15 +608,20 @@ export default function RayBurst() {
           );
         });
 
-        // Draw center point indicator with a larger, draggable appearance
+        // Draw delete dot for detector
         ctx.beginPath();
-        ctx.arc(detector.x, detector.centerY, 5, 0, Math.PI * 2);
+        ctx.arc(detector.x, detector.centerY, 6, 0, Math.PI * 2);
+        ctx.fillStyle = "yellow";
+        ctx.fill();
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Draw move handle offset from delete dot
+        ctx.beginPath();
+        ctx.arc(detector.x + 15, detector.centerY, 5, 0, Math.PI * 2);
         ctx.fillStyle = "white";
         ctx.fill();
-
-        // Add a border to make it more visible
-        ctx.beginPath();
-        ctx.arc(detector.x, detector.centerY, 5, 0, Math.PI * 2);
         ctx.strokeStyle = "black";
         ctx.lineWidth = 1;
         ctx.stroke();
@@ -599,15 +700,20 @@ export default function RayBurst() {
           );
         });
 
-        // Draw center point indicator with a larger, draggable appearance
+        // Draw delete dot for detector
         ctx.beginPath();
-        ctx.arc(detector.x, detector.centerY, 5, 0, Math.PI * 2);
+        ctx.arc(detector.x, detector.centerY, 6, 0, Math.PI * 2);
+        ctx.fillStyle = "yellow";
+        ctx.fill();
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Draw move handle offset from delete dot
+        ctx.beginPath();
+        ctx.arc(detector.x + 15, detector.centerY, 5, 0, Math.PI * 2);
         ctx.fillStyle = "white";
         ctx.fill();
-
-        // Add a border to make it more visible
-        ctx.beginPath();
-        ctx.arc(detector.x, detector.centerY, 5, 0, Math.PI * 2);
         ctx.strokeStyle = "black";
         ctx.lineWidth = 1;
         ctx.stroke();
@@ -638,7 +744,7 @@ export default function RayBurst() {
           onMouseUp={handleCanvasMouseUp}
           onMouseLeave={handleCanvasMouseUp}
           onMouseMove={handleCanvasMouseMove}
-          className={`absolute inset-0 w-full h-full bg-black ${isPanning ? "cursor-move" : isDraggingDetector ? "cursor-ns-resize" : "cursor-crosshair"}`}
+          className="absolute inset-0 w-full h-full bg-black"
         />
       </div>
       <div className="w-64 bg-gray-900 p-4 flex flex-col gap-4 border-l border-gray-800 overflow-y-auto">
