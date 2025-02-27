@@ -220,6 +220,9 @@ export default function RayBurst() {
   const updateDetectorBins = () => {
     setDetectors((prevDetectors) =>
       prevDetectors.map((detector) => {
+        // Skip composite detectors as they don't have their own bins
+        if (detector.isComposite) return detector;
+
         const bins = new Array(numSlices).fill(0);
         const detectorTop = detector.centerY - maxDetectorHeight / 2;
 
@@ -519,16 +522,39 @@ export default function RayBurst() {
     // Draw detectors
     detectors.forEach((detector) => {
       if (detector.isComposite) {
-        // For composite detectors, combine all bins from detectors to the left
+        // For composite detectors, we need to map the data from source detectors to the composite detector's position
+        // Find all regular detectors to the left
         const leftDetectors = detectors.filter(
           (d) => d.x < detector.x && !d.isComposite,
         );
+
+        // Create a new array to hold combined ray intersections
         const combinedBins = new Array(numSlices).fill(0);
 
+        // The composite detector's top position is based on its own centerY
+        const compositeDetectorTop = detector.centerY - maxDetectorHeight / 2;
+
+        // For each detector to the left, map its bins to the composite detector's coordinate space
         leftDetectors.forEach((leftDetector) => {
-          leftDetector.bins.forEach((value, index) => {
-            if (index < combinedBins.length) {
-              combinedBins[index] += value;
+          // Calculate the top of the source detector
+          const leftDetectorTop = leftDetector.centerY - maxDetectorHeight / 2;
+
+          // For each bin in the source detector
+          leftDetector.bins.forEach((value, sourceIndex) => {
+            if (value === 0) return; // Skip empty bins
+
+            // Calculate the absolute Y position of this bin in the source detector
+            const binSize = maxDetectorHeight / numSlices;
+            const sourceY = leftDetectorTop + (sourceIndex + 0.5) * binSize; // Center of the bin
+
+            // Now map this Y position to a bin in the composite detector
+            const relativeY = sourceY - compositeDetectorTop;
+            const targetIndex = Math.floor(
+              (relativeY / maxDetectorHeight) * numSlices,
+            );
+
+            if (targetIndex >= 0 && targetIndex < combinedBins.length) {
+              combinedBins[targetIndex] += value;
             }
           });
         });
