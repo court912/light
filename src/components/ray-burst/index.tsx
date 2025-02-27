@@ -17,6 +17,7 @@ import {
   getBinColor,
 } from "./utils/rendering";
 import ControlPanel from "./components/ControlPanel";
+import { calculateRayLength } from "./utils/calculation";
 
 /**
  * Main component for the ray-tracing visualization system
@@ -128,18 +129,19 @@ const RayBurst: React.FC = () => {
         ...burst,
         rays: Array.from({ length: numRays }, (_, i) => {
           const angle = (Math.PI * 2 * i) / numRays;
-          const length = createRayBurst(
+          // Calculate ray length to ensure it reaches the canvas boundary
+          const length = calculateRayLength(
             burst.x,
             burst.y,
-            1,
+            angle,
             canvas.width,
             canvas.height,
-          ).rays[0].length;
+          );
           return { angle, length };
         }),
       })),
     );
-  }, [numRays, createRayBurst]);
+  }, [numRays]);
 
   // Update detector bins when rays or detectors change
   useEffect(() => {
