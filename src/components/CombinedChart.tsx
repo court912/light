@@ -410,6 +410,9 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
           return { ...line, price };
         });
 
+      // Store the horizontal lines with prices in a global variable for export
+      window.horizontalReferenceLines = horizontalLines;
+
       // Sort horizontal lines by price
       horizontalLines.sort((a, b) => a.price - b.price);
 

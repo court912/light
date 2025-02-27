@@ -384,6 +384,58 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
         </div>
       </div>
 
+      {/* Export Section */}
+      <div className="border-b border-gray-700 pb-4 mb-4">
+        <h3 className="text-lg font-medium text-white mb-3">Export Data</h3>
+        <div className="space-y-2">
+          <button
+            onClick={() => {
+              // Get all horizontal reference lines with their prices
+              const horizontalLines = window.horizontalReferenceLines || [];
+              if (horizontalLines.length === 0) {
+                alert("No horizontal reference lines to export");
+                return;
+              }
+
+              // Format as CSV
+              const csv = horizontalLines
+                .map((line) => line.price.toFixed(2))
+                .join(",");
+
+              try {
+                // Use a textarea element for more reliable clipboard copying
+                const textarea = document.createElement("textarea");
+                textarea.value = csv;
+                textarea.style.position = "fixed";
+                textarea.style.opacity = "0";
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand("copy");
+                document.body.removeChild(textarea);
+
+                // Show toast notification
+                const toast = document.createElement("div");
+                toast.className =
+                  "fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50";
+                toast.textContent = "Prices copied to clipboard!";
+                document.body.appendChild(toast);
+
+                // Remove toast after 3 seconds
+                setTimeout(() => {
+                  document.body.removeChild(toast);
+                }, 3000);
+              } catch (err) {
+                console.error("Failed to copy: ", err);
+                alert("Failed to copy to clipboard. Please try again.");
+              }
+            }}
+            className="w-full bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700 transition-colors"
+          >
+            Copy Horizontal Lines to Clipboard
+          </button>
+        </div>
+      </div>
+
       {/* Clear Elements Section */}
       <div className="border-b border-gray-700 pb-4 mb-4">
         <h3 className="text-lg font-medium text-white mb-3">Clear Elements</h3>
