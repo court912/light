@@ -51,6 +51,13 @@ export default function RayBurst() {
   // Store reference lines (CMD+click for horizontal, Shift+click for vertical)
   const [referenceLines, setReferenceLines] = useState<ReferenceLine[]>([]);
 
+  // Visibility toggles for different elements
+  const [showRays, setShowRays] = useState(true);
+  const [showDetectors, setShowDetectors] = useState(true);
+  const [showCompositeDetectors, setShowCompositeDetectors] = useState(true);
+  const [showReferenceLines, setShowReferenceLines] = useState(true);
+  const [showBackgroundImage, setShowBackgroundImage] = useState(true);
+
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -455,8 +462,8 @@ export default function RayBurst() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Draw background image if exists
-    if (backgroundImage) {
+    // Draw background image if exists and visible
+    if (backgroundImage && showBackgroundImage) {
       ctx.globalAlpha = imageOpacity / 100;
       const width = (canvas.width * imageWidth) / 100;
       const height = (canvas.height * imageHeight) / 100;
@@ -468,59 +475,71 @@ export default function RayBurst() {
 
     const alpha = transparency / 100;
 
-    // Draw rays and centroids
-    rays.forEach((burst) => {
-      burst.rays.forEach((ray) => {
+    // Draw rays and centroids if visible
+    if (showRays) {
+      rays.forEach((burst) => {
+        burst.rays.forEach((ray) => {
+          ctx.beginPath();
+          ctx.moveTo(burst.x, burst.y);
+          ctx.lineTo(
+            burst.x + Math.cos(ray.angle) * ray.length,
+            burst.y + Math.sin(ray.angle) * ray.length,
+          );
+          ctx.strokeStyle = `rgba(255, 0, 0, ${alpha})`;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        });
+
         ctx.beginPath();
-        ctx.moveTo(burst.x, burst.y);
-        ctx.lineTo(
-          burst.x + Math.cos(ray.angle) * ray.length,
-          burst.y + Math.sin(ray.angle) * ray.length,
-        );
-        ctx.strokeStyle = `rgba(255, 0, 0, ${alpha})`;
-        ctx.lineWidth = 2;
+        ctx.arc(burst.x, burst.y, CENTROID_RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 0, ${alpha})`;
+        ctx.fill();
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 1;
         ctx.stroke();
       });
+    }
 
-      ctx.beginPath();
-      ctx.arc(burst.x, burst.y, CENTROID_RADIUS, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255, 255, 0, ${alpha})`;
-      ctx.fill();
-      ctx.strokeStyle = "white";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    });
+    // Draw reference lines with delete dots if visible
+    if (showReferenceLines) {
+      referenceLines.forEach((line) => {
+        ctx.beginPath();
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 2;
 
-    // Draw reference lines with delete dots
-    referenceLines.forEach((line) => {
-      ctx.beginPath();
-      ctx.strokeStyle = "white";
-      ctx.lineWidth = 2;
+        if (line.isHorizontal) {
+          // Draw horizontal reference line
+          ctx.moveTo(0, line.y);
+          ctx.lineTo(canvas.width, line.y);
+        } else {
+          // Draw vertical reference line
+          ctx.moveTo(line.x, 0);
+          ctx.lineTo(line.x, canvas.height);
+        }
 
-      if (line.isHorizontal) {
-        // Draw horizontal reference line
-        ctx.moveTo(0, line.y);
-        ctx.lineTo(canvas.width, line.y);
-      } else {
-        // Draw vertical reference line
-        ctx.moveTo(line.x, 0);
-        ctx.lineTo(line.x, canvas.height);
+        ctx.stroke();
+
+        // Draw a delete dot at the reference line's origin point
+        ctx.beginPath();
+        ctx.arc(line.x, line.y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = "yellow";
+        ctx.fill();
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      });
+    }
+
+    // Draw detectors if visible
+    detectors.forEach((detector) => {
+      // Skip regular detectors if they're hidden or composite detectors if those are hidden
+      if (
+        (detector.isComposite && !showCompositeDetectors) ||
+        (!detector.isComposite && !showDetectors)
+      ) {
+        return;
       }
 
-      ctx.stroke();
-
-      // Draw a delete dot at the reference line's origin point
-      ctx.beginPath();
-      ctx.arc(line.x, line.y, 6, 0, Math.PI * 2);
-      ctx.fillStyle = "yellow";
-      ctx.fill();
-      ctx.strokeStyle = "white";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    });
-
-    // Draw detectors
-    detectors.forEach((detector) => {
       if (detector.isComposite) {
         // For composite detectors, we need to map the data from source detectors to the composite detector's position
         // Find all regular detectors to the left
@@ -758,6 +777,11 @@ export default function RayBurst() {
     binOpacity,
     panOffset,
     colorBandRange,
+    showRays,
+    showDetectors,
+    showCompositeDetectors,
+    showReferenceLines,
+    showBackgroundImage,
   ]);
 
   return (
@@ -980,41 +1004,95 @@ export default function RayBurst() {
           </>
         )}
 
-        <div className="space-y-4">
-          <button
-            onClick={() => setIsPlacingDetector(true)}
-            className="w-full bg-cyan-600 text-white px-3 py-2 rounded hover:bg-cyan-700 transition-colors"
-          >
-            Place Detector
-          </button>
+        <div className="border-b border-gray-700 pb-4 mb-4">
+          <h3 className="text-lg font-medium text-white mb-3">Add Elements</h3>
+          <div className="space-y-2">
+            <button
+              onClick={() => setIsPlacingDetector(true)}
+              className="w-full bg-cyan-600 text-white px-3 py-2 rounded hover:bg-cyan-700 transition-colors"
+            >
+              Place Detector
+            </button>
 
-          <button
-            onClick={() => setReferenceLines([])}
-            className="w-full bg-red-600 text-white px-3 py-2 rounded hover:bg-red-700 transition-colors"
-          >
-            Clear Reference Lines
-          </button>
+            <button
+              onClick={() => setIsPlacingCompositeDetector(true)}
+              className="w-full bg-orange-600 text-white px-3 py-2 rounded hover:bg-orange-700 transition-colors"
+            >
+              Place Composite Detector
+            </button>
+          </div>
+        </div>
 
-          <button
-            onClick={() => setIsPlacingCompositeDetector(true)}
-            className="w-full bg-orange-600 text-white px-3 py-2 rounded hover:bg-orange-700 transition-colors"
-          >
-            Place Composite Detector
-          </button>
+        <div className="border-b border-gray-700 pb-4 mb-4">
+          <h3 className="text-lg font-medium text-white mb-3">
+            Toggle Visibility
+          </h3>
+          <div className="space-y-2">
+            <button
+              onClick={() => setShowRays(!showRays)}
+              className={`w-full px-3 py-2 rounded transition-colors ${showRays ? "bg-green-600 hover:bg-green-700" : "bg-gray-600 hover:bg-gray-700"} text-white`}
+            >
+              {showRays ? "Hide" : "Show"} Rays
+            </button>
 
-          <button
-            onClick={() => setDetectors([])}
-            className="w-full bg-red-600 text-white px-3 py-2 rounded hover:bg-red-700 transition-colors"
-          >
-            Clear Detectors
-          </button>
+            <button
+              onClick={() => setShowDetectors(!showDetectors)}
+              className={`w-full px-3 py-2 rounded transition-colors ${showDetectors ? "bg-green-600 hover:bg-green-700" : "bg-gray-600 hover:bg-gray-700"} text-white`}
+            >
+              {showDetectors ? "Hide" : "Show"} Detectors
+            </button>
 
-          <button
-            onClick={() => setRays([])}
-            className="w-full bg-red-600 text-white px-3 py-2 rounded hover:bg-red-700 transition-colors"
-          >
-            Clear Sunbursts
-          </button>
+            <button
+              onClick={() => setShowCompositeDetectors(!showCompositeDetectors)}
+              className={`w-full px-3 py-2 rounded transition-colors ${showCompositeDetectors ? "bg-green-600 hover:bg-green-700" : "bg-gray-600 hover:bg-gray-700"} text-white`}
+            >
+              {showCompositeDetectors ? "Hide" : "Show"} Composite Detectors
+            </button>
+
+            <button
+              onClick={() => setShowReferenceLines(!showReferenceLines)}
+              className={`w-full px-3 py-2 rounded transition-colors ${showReferenceLines ? "bg-green-600 hover:bg-green-700" : "bg-gray-600 hover:bg-gray-700"} text-white`}
+            >
+              {showReferenceLines ? "Hide" : "Show"} Reference Lines
+            </button>
+
+            {backgroundImage && (
+              <button
+                onClick={() => setShowBackgroundImage(!showBackgroundImage)}
+                className={`w-full px-3 py-2 rounded transition-colors ${showBackgroundImage ? "bg-green-600 hover:bg-green-700" : "bg-gray-600 hover:bg-gray-700"} text-white`}
+              >
+                {showBackgroundImage ? "Hide" : "Show"} Background Image
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="border-b border-gray-700 pb-4 mb-4">
+          <h3 className="text-lg font-medium text-white mb-3">
+            Clear Elements
+          </h3>
+          <div className="space-y-2">
+            <button
+              onClick={() => setReferenceLines([])}
+              className="w-full bg-red-600 text-white px-3 py-2 rounded hover:bg-red-700 transition-colors"
+            >
+              Clear Reference Lines
+            </button>
+
+            <button
+              onClick={() => setDetectors([])}
+              className="w-full bg-red-600 text-white px-3 py-2 rounded hover:bg-red-700 transition-colors"
+            >
+              Clear Detectors
+            </button>
+
+            <button
+              onClick={() => setRays([])}
+              className="w-full bg-red-600 text-white px-3 py-2 rounded hover:bg-red-700 transition-colors"
+            >
+              Clear Sunbursts
+            </button>
+          </div>
         </div>
       </div>
     </div>
