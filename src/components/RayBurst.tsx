@@ -98,10 +98,11 @@ export default function RayBurst() {
 
   const [transparency, setTransparency] = useState(100);
   const [binOpacity, setBinOpacity] = useState(50);
-  const [numSlices, setNumSlices] = useState(100);
-  const [maxDetectorHeight] = useState(144000);
-  const [amplification, setAmplification] = useState(1);
-  const [maxBarWidth, setMaxBarWidth] = useState(100);
+  const [numSlices, setNumSlices] = useState(14000);
+  const [maxDetectorHeight, setMaxDetectorHeight] = useState(288000);
+  const [amplification, setAmplification] = useState(10);
+  const [maxBarWidth, setMaxBarWidth] = useState(300);
+  const [colorBandRange, setColorBandRange] = useState(0.09);
   const [detectors, setDetectors] = useState<Detector[]>([]);
   const [isPlacingDetector, setIsPlacingDetector] = useState(false);
   const [isPlacingCompositeDetector, setIsPlacingCompositeDetector] =
@@ -265,12 +266,21 @@ export default function RayBurst() {
   };
 
   const handleCanvasMouseUp = () => {
+    if (isDraggingDetector) {
+      setWasDragging(true);
+    }
     setIsDraggingDetector(false);
     setSelectedDetectorIndex(null);
   };
 
+  // Track if we were dragging to prevent click after drag ends
+  const [wasDragging, setWasDragging] = useState(false);
+
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isPanning || isDraggingDetector) return; // Prevent clicks while panning or dragging
+    if (isPanning || wasDragging) {
+      setWasDragging(false);
+      return; // Prevent clicks while panning or after dragging
+    }
 
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
@@ -435,6 +445,17 @@ export default function RayBurst() {
           maxIntensity * amplification,
         );
 
+        // Find the Point of Control (PoC) - bin with the highest intensity
+        const pocIndex = combinedBins.indexOf(maxIntensity);
+        const halfBins = numSlices / 2;
+
+        // Define color bands based on distance from PoC (approximating normal distribution)
+        // Scale the bands based on the user-defined range
+        const band1 = 0.3413 * colorBandRange; // ~34% from center
+        const band2 = 0.4772 * colorBandRange; // ~48% from center
+        const band3 = 0.6131 * colorBandRange; // ~61% from center
+        const band4 = 0.6345 * colorBandRange; // ~63% from center
+
         combinedBins.forEach((intensity, i) => {
           // Use the raw intensity value directly, scaled to the max width
           const barWidth =
@@ -451,10 +472,38 @@ export default function RayBurst() {
             binSize,
           );
 
-          // Draw the intensity bar with opacity based on relative intensity
+          // Calculate distance from PoC (normalized to 0-1)
+          // Only consider bins within the colorBandRange percentage from center
+          const binDistFrac =
+            Math.abs(i - pocIndex) / (halfBins * colorBandRange);
+
+          // Calculate opacity for color intensity
           const opacity =
             intensity > 0 ? Math.min(1, intensity / maxIntensity) : 0;
-          ctx.fillStyle = `rgba(255, 165, 0, ${opacity})`;
+
+          // Determine color based on distance from PoC (with full opacity)
+          let color;
+          if (i === pocIndex) {
+            // Point of Control is yellow
+            color = "rgba(255, 255, 0, 1)";
+          } else if (binDistFrac <= band1) {
+            // Light green for bins close to PoC
+            color = "rgba(0, 255, 0, 1)";
+          } else if (binDistFrac <= band2) {
+            // Green for bins a bit further
+            color = "rgba(0, 128, 0, 1)";
+          } else if (binDistFrac <= band3) {
+            // Orange for bins even further
+            color = "rgba(255, 165, 0, 1)";
+          } else if (binDistFrac <= band4) {
+            // Red for bins at the edge of significance
+            color = "rgba(255, 0, 0, 1)";
+          } else {
+            // Blue for bins far from PoC
+            color = "rgba(0, 0, 255, 1)";
+          }
+
+          ctx.fillStyle = color;
           ctx.fillRect(
             detector.x + DETECTOR_WIDTH / 2,
             detectorTop + i * binSize,
@@ -484,6 +533,17 @@ export default function RayBurst() {
           maxIntensity * amplification,
         );
 
+        // Find the Point of Control (PoC) - bin with the highest intensity
+        const pocIndex = detector.bins.indexOf(maxIntensity);
+        const halfBins = numSlices / 2;
+
+        // Define color bands based on distance from PoC (approximating normal distribution)
+        // Scale the bands based on the user-defined range
+        const band1 = 0.3413 * colorBandRange; // ~34% from center
+        const band2 = 0.4772 * colorBandRange; // ~48% from center
+        const band3 = 0.6131 * colorBandRange; // ~61% from center
+        const band4 = 0.6345 * colorBandRange; // ~63% from center
+
         detector.bins.forEach((intensity, i) => {
           // Use the raw intensity value directly, scaled to the max width
           const barWidth =
@@ -500,10 +560,37 @@ export default function RayBurst() {
             binSize,
           );
 
-          // Draw the intensity bar with opacity based on relative intensity
+          // Calculate distance from PoC (normalized to 0-1)
+          // Only consider bins within the colorBandRange percentage from center
+          const binDistFrac =
+            Math.abs(i - pocIndex) / (halfBins * colorBandRange);
+
+          // Calculate opacity for color intensity
           const opacity =
             intensity > 0 ? Math.min(1, intensity / maxIntensity) : 0;
-          ctx.fillStyle = `rgba(0, 255, 255, ${opacity})`;
+
+          // Determine color based on distance from PoC (with full opacity)
+          let color;
+          if (i === pocIndex) {
+            // Point of Control is yellow
+            color = "rgba(255, 255, 0, 1)";
+          } else if (binDistFrac <= band1) {
+            // Light green for bins close to PoC
+            color = "rgba(0, 255, 0, 1)";
+          } else if (binDistFrac <= band2) {
+            // Green for bins a bit further
+            color = "rgba(0, 128, 0, 1)";
+          } else if (binDistFrac <= band3) {
+            // Orange for bins even further
+            color = "rgba(255, 165, 0, 1)";
+          } else if (binDistFrac <= band4) {
+            // Red for bins at the edge of significance
+            color = "rgba(255, 0, 0, 1)";
+          } else {
+            // Blue for bins far from PoC
+            color = "rgba(0, 0, 255, 1)";
+          }
+          ctx.fillStyle = color;
           ctx.fillRect(
             detector.x + DETECTOR_WIDTH / 2,
             detectorTop + i * binSize,
@@ -538,6 +625,7 @@ export default function RayBurst() {
     referenceLines,
     binOpacity,
     panOffset,
+    colorBandRange,
   ]);
 
   return (
@@ -607,7 +695,21 @@ export default function RayBurst() {
 
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-200">
-            Number of Detector Slices (144000 units tall)
+            Detector Height (pixels)
+          </label>
+          <input
+            type="number"
+            value={maxDetectorHeight}
+            onChange={(e) =>
+              setMaxDetectorHeight(parseFloat(e.target.value) || 144000)
+            }
+            className="w-full bg-gray-800 text-white px-3 py-2 rounded"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-200">
+            Number of Detector Slices
           </label>
           <input
             type="number"
@@ -648,6 +750,20 @@ export default function RayBurst() {
             }
             className="w-full bg-gray-800 text-white px-3 py-2 rounded"
             min="1"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-200">
+            Color Band Range (0-1)
+          </label>
+          <input
+            type="number"
+            value={colorBandRange}
+            onChange={(e) =>
+              setColorBandRange(parseFloat(e.target.value) || 0.997)
+            }
+            className="w-full bg-gray-800 text-white px-3 py-2 rounded"
           />
         </div>
 
