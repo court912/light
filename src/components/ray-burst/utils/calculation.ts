@@ -16,31 +16,9 @@ export const calculateRayLength = (
   canvasWidth: number,
   canvasHeight: number,
 ): number => {
-  const cosA = Math.cos(angle);
-  const sinA = Math.sin(angle);
-
-  // Start with a length that's guaranteed to be longer than needed
-  let length = Math.max(canvasWidth, canvasHeight) * 2;
-
-  // Check horizontal intersections
-  if (cosA !== 0) {
-    const rightDist = (canvasWidth - x) / cosA;
-    const leftDist = (0 - x) / cosA;
-
-    if (rightDist > 0 && rightDist < length) length = rightDist;
-    if (leftDist > 0 && leftDist < length) length = leftDist;
-  }
-
-  // Check vertical intersections
-  if (sinA !== 0) {
-    const bottomDist = (canvasHeight - y) / sinA;
-    const topDist = (0 - y) / sinA;
-
-    if (bottomDist > 0 && bottomDist < length) length = bottomDist;
-    if (topDist > 0 && topDist < length) length = topDist;
-  }
-
-  return length;
+  // Return a very large number to make rays extend indefinitely
+  // This will make rays appear to extend beyond the canvas boundaries
+  return Number.MAX_SAFE_INTEGER;
 };
 
 /**

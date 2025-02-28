@@ -22,11 +22,14 @@ export const renderRays = (
         normalizedAngle <= (-3 * Math.PI) / 2;
 
       if (isRightSide) {
+        // Calculate a length that will definitely extend beyond canvas boundaries
+        const maxDimension = Math.max(ctx.canvas.width, ctx.canvas.height) * 10;
+
         ctx.beginPath();
         ctx.moveTo(burst.x, burst.y);
         ctx.lineTo(
-          burst.x + Math.cos(ray.angle) * ray.length,
-          burst.y + Math.sin(ray.angle) * ray.length,
+          burst.x + Math.cos(ray.angle) * maxDimension,
+          burst.y + Math.sin(ray.angle) * maxDimension,
         );
         ctx.strokeStyle = `rgba(255, 0, 0, ${alpha})`;
         ctx.lineWidth = 2;
