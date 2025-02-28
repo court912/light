@@ -52,7 +52,7 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Candlestick chart state
+  // State for chart layout
   const [isPanning, setIsPanning] = useState(false);
   const [startPanPoint, setStartPanPoint] = useState({ x: 0, y: 0 });
   const [chartOffset, setChartOffset] = useState({ x: 0, y: 0 });
@@ -60,38 +60,7 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
   const [candleData, setCandleData] = useState<Candle[]>([]);
   const [xRange, setXRange] = useState({ min: 0, max: 0 });
   const [yRange, setYRange] = useState({ min: 0, max: 0 });
-
-  // Expose the setCandleData function globally for direct access
-  useEffect(() => {
-    window.setChartData = (data: Candle[]) => {
-      console.log("Direct setCandleData called with", data.length, "candles");
-
-      // Set the candle data
-      setCandleData(data);
-
-      // Calculate and set ranges
-      if (data.length > 0) {
-        const minX = Math.min(...data.map((d) => d.time));
-        const maxX = Math.max(...data.map((d) => d.time));
-        const minY = Math.min(...data.map((d) => d.low));
-        const maxY = Math.max(...data.map((d) => d.high));
-
-        // Add some padding to the y-range
-        const yPadding = (maxY - minY) * 0.1;
-
-        setXRange({ min: minX, max: maxX });
-        setYRange({ min: minY - yPadding, max: maxY + yPadding });
-
-        // Reset view
-        setChartOffset({ x: 0, y: 0 });
-        setScale(1);
-      }
-    };
-
-    return () => {
-      delete window.setChartData;
-    };
-  }, []);
+  const [showTimeLines, setShowTimeLines] = useState(true);
 
   // Ray burst state
   const [rays, setRays] = useState<RayBurstType[]>([]);
@@ -138,6 +107,44 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
     findRayBurstAtPoint,
     createDetector,
   } = useCanvasInteractions();
+
+  // Expose the setCandleData function globally for direct access
+  useEffect(() => {
+    window.setChartData = (data: Candle[]) => {
+      console.log("Direct setCandleData called with", data.length, "candles");
+
+      // Set the candle data
+      setCandleData(data);
+
+      // Calculate and set ranges
+      if (data.length > 0) {
+        const minX = Math.min(...data.map((d) => d.time));
+        const maxX = Math.max(...data.map((d) => d.time));
+        const minY = Math.min(...data.map((d) => d.low));
+        const maxY = Math.max(...data.map((d) => d.high));
+
+        // Add some padding to the y-range
+        const yPadding = (maxY - minY) * 0.1;
+
+        setXRange({ min: minX, max: maxX });
+        setYRange({ min: minY - yPadding, max: maxY + yPadding });
+
+        // Reset view
+        setChartOffset({ x: 0, y: 0 });
+        setScale(1);
+      }
+    };
+
+    // Expose the toggle time lines function
+    window.toggleTimeLines = () => {
+      setShowTimeLines((prev) => !prev);
+    };
+
+    return () => {
+      delete window.setChartData;
+      delete window.toggleTimeLines;
+    };
+  }, []);
 
   // Parse CSV data function
   const parseCSVData = useCallback((csvText: string) => {
@@ -749,7 +756,7 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
       }
 
       // Draw time lines at 6AM, 8:30AM and 6PM
-      if (candleData.length > 0) {
+      if (candleData.length > 0 && showTimeLines) {
         // Detect candle spacing by looking at the first two candles
         let minutesPerCandle = 1; // Default to 1 minute
         if (candleData.length >= 2) {
@@ -1152,6 +1159,7 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
     calculateCompositeBins,
     referenceLines,
     controlPanelWidth,
+    showTimeLines,
   ]);
 
   // Handle mouse wheel for zooming

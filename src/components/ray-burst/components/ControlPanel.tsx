@@ -373,6 +373,18 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             {showReferenceLines ? "Hide" : "Show"} Reference Lines
           </button>
 
+          <button
+            onClick={() => {
+              // Access the CombinedChart's showTimeLines state
+              if (window.toggleTimeLines) {
+                window.toggleTimeLines();
+              }
+            }}
+            className="w-full px-3 py-2 rounded transition-colors bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            Toggle Time Lines
+          </button>
+
           {backgroundImage && (
             <button
               onClick={() => setShowBackgroundImage(!showBackgroundImage)}
@@ -381,45 +393,6 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               {showBackgroundImage ? "Hide" : "Show"} Background Image
             </button>
           )}
-        </div>
-      </div>
-
-      {/* Debug Section */}
-      <div className="border-b border-gray-700 pb-4 mb-4">
-        <h3 className="text-lg font-medium text-white mb-3">Debug Tools</h3>
-        <div className="space-y-2">
-          <button
-            onClick={() => {
-              // Show debug info
-              console.log("Debug button clicked");
-              window.dispatchEvent(new Event("show-debug-info"));
-            }}
-            className="w-full bg-purple-600 text-white px-3 py-2 rounded hover:bg-purple-700 transition-colors"
-          >
-            Show Debug Info
-          </button>
-          <button
-            onClick={() => {
-              // Force a reload of the chart
-              console.log("Force redraw clicked");
-              window.dispatchEvent(new Event("force-chart-reload"));
-            }}
-            className="w-full bg-purple-600 text-white px-3 py-2 rounded hover:bg-purple-700 transition-colors"
-          >
-            Force Redraw
-          </button>
-          <button
-            onClick={() => {
-              // Log the chart data to console
-              console.log("Current chart data:", window.chartData);
-              alert(
-                `Chart has ${window.chartData?.length || 0} candles. Check console for details.`,
-              );
-            }}
-            className="w-full bg-purple-600 text-white px-3 py-2 rounded hover:bg-purple-700 transition-colors"
-          >
-            Log Chart Data
-          </button>
         </div>
       </div>
 
@@ -588,64 +561,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             className="w-full bg-gray-800 text-white px-3 py-2 rounded file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"
             id="csv-file-input"
           />
-          <button
-            onClick={() => {
-              // Generate sample data
-              const now = Math.floor(Date.now() / 1000);
-              const parsedData = [];
-              let price = 4300;
 
-              // Generate 100 candles with realistic price movement
-              for (let i = 0; i < 100; i++) {
-                const time = now - (100 - i) * 3600; // hourly candles going back from now
-                const change = (Math.random() - 0.5) * 20; // random price change
-                const open = price;
-                price += change;
-                const close = price;
-                const high = Math.max(open, close) + Math.random() * 10;
-                const low = Math.min(open, close) - Math.random() * 10;
-
-                // Add directly to parsed data
-                parsedData.push({
-                  time: time,
-                  open: open,
-                  high: high,
-                  low: low,
-                  close: close,
-                });
-              }
-
-              console.log(
-                "Generated sample data, first candle:",
-                parsedData[0],
-              );
-
-              // Set the data directly in the window object for debugging
-              window.chartData = parsedData;
-
-              // Create a direct setter function to update the chart
-              if (!window.setChartData) {
-                alert(
-                  "Chart component not initialized yet. Please try again in a moment.",
-                );
-                return;
-              }
-
-              // Call the setter function directly
-              window.setChartData(parsedData);
-
-              // Show toast
-              const toast = document.createElement("div");
-              toast.className =
-                "fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50";
-              toast.textContent = "Sample data generated and loaded!";
-              document.body.appendChild(toast);
-              setTimeout(() => document.body.removeChild(toast), 3000);
-            }}
-            className="w-full mt-2 bg-indigo-600 text-white px-3 py-2 rounded hover:bg-indigo-700 transition-colors"
-          >
-            Generate Sample Data
-          </button>
           <button
             onClick={() => {
               // Force a reload of the chart

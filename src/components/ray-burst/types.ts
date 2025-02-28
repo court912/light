@@ -57,5 +57,6 @@ declare global {
     setChartData?: (data: any[]) => void;
     horizontalReferenceLines?: any[];
     minutesPerCandle?: number;
+    toggleTimeLines?: () => void;
   }
 }
