@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useState } from "react";
+import ScaleInputs from "./ScaleInputs";
 
 interface ControlPanelProps {
   // Ray controls
@@ -322,6 +323,116 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
         </>
       )}
 
+      {/* Scale Inputs Section */}
+      <ScaleInputs
+        xScale={1}
+        yScale={1}
+        onXScaleChange={(value) => {
+          if (value > 0) {
+            // Create a custom event to update X scale
+            console.log("Dispatching X scale update event with value:", value);
+            const event = new CustomEvent("update-x-scale", { detail: value });
+            window.dispatchEvent(event);
+          }
+        }}
+        onYScaleChange={(value) => {
+          if (value > 0) {
+            // Create a custom event to update Y scale
+            console.log("Dispatching Y scale update event with value:", value);
+            const event = new CustomEvent("update-y-scale", { detail: value });
+            window.dispatchEvent(event);
+          }
+        }}
+      />
+
+      {/* Chart Controls Section */}
+      <div className="border-b border-gray-700 pb-4 mb-4">
+        <h3 className="text-lg font-medium text-white mb-3">
+          Chart Appearance
+        </h3>
+        <div className="space-y-2">
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-200">
+              X Skew (°)
+            </label>
+            <input
+              type="range"
+              min="-45"
+              max="45"
+              value="0"
+              onChange={(e) => {
+                const value = parseInt(e.target.value);
+                const event = new CustomEvent("update-x-skew", {
+                  detail: value,
+                });
+                window.dispatchEvent(event);
+              }}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-200">
+              Y Skew (°)
+            </label>
+            <input
+              type="range"
+              min="-45"
+              max="45"
+              value="0"
+              onChange={(e) => {
+                const value = parseInt(e.target.value);
+                const event = new CustomEvent("update-y-skew", {
+                  detail: value,
+                });
+                window.dispatchEvent(event);
+              }}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-200">
+              Chart Width (%)
+            </label>
+            <input
+              type="range"
+              min="50"
+              max="200"
+              value="100"
+              onChange={(e) => {
+                const value = parseInt(e.target.value);
+                const event = new CustomEvent("update-chart-width", {
+                  detail: value,
+                });
+                window.dispatchEvent(event);
+              }}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-200">
+              Chart Height (%)
+            </label>
+            <input
+              type="range"
+              min="50"
+              max="200"
+              value="100"
+              onChange={(e) => {
+                const value = parseInt(e.target.value);
+                const event = new CustomEvent("update-chart-height", {
+                  detail: value,
+                });
+                window.dispatchEvent(event);
+              }}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+            />
+          </div>
+        </div>
+      </div>
+
       {/* Add Elements Section */}
       <div className="border-b border-gray-700 pb-4 mb-4">
         <h3 className="text-lg font-medium text-white mb-3">Add Elements</h3>
@@ -338,6 +449,17 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             className="w-full bg-orange-600 text-white px-3 py-2 rounded hover:bg-orange-700 transition-colors"
           >
             Place Composite Detector
+          </button>
+
+          <button
+            onClick={() => {
+              // Create a custom event to be handled by the CombinedChart component
+              const event = new CustomEvent("plot-sunbursts-at-highs");
+              window.dispatchEvent(event);
+            }}
+            className="w-full bg-purple-600 text-white px-3 py-2 rounded hover:bg-purple-700 transition-colors"
+          >
+            Plot Sunbursts at Highs
           </button>
         </div>
       </div>

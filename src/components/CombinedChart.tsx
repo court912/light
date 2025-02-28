@@ -313,8 +313,79 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
     );
   }, []);
 
-  // Listen for CSV import and debug events
+  // Listen for CSV import, debug events, plot sunbursts, and scale updates
   useEffect(() => {
+    // Handler for updating X scale
+    const handleUpdateXScale = (event: CustomEvent) => {
+      const newXScale = event.detail;
+      console.log("Updating X scale to:", newXScale);
+      // You can use this value to adjust how rays are positioned horizontally
+      // For example, store it in state and use it when creating ray bursts
+    };
+
+    // Handler for updating Y scale
+    const handleUpdateYScale = (event: CustomEvent) => {
+      const newYScale = event.detail;
+      console.log("Updating Y scale to:", newYScale);
+      // You can use this value to adjust how rays are positioned vertically
+      // For example, store it in state and use it when creating ray bursts
+    };
+    // Handler for plotting sunbursts at high points
+    const handlePlotSunburstsAtHighs = () => {
+      if (candleData && candleData.length > 0) {
+        const newRays = [];
+        const canvas = canvasRef.current;
+        if (!canvas) {
+          alert("Canvas not available");
+          return;
+        }
+
+        // Calculate scales for positioning
+        const xScale = chartWidth / (xRange.max - xRange.min);
+        const yScale = chartHeight / (yRange.max - yRange.min);
+
+        console.log("Creating sunbursts with scales:", { xScale, yScale });
+        console.log("Chart dimensions:", { chartWidth, chartHeight });
+        console.log("Ranges:", { xRange, yRange });
+
+        // For each candle, create a sunburst at the high point
+        candleData.forEach((candle) => {
+          // Calculate the x position based on time (adjusted for chart offset)
+          const x = originX + (candle.time - xRange.min) * xScale;
+
+          // Calculate the y position based on high price
+          const y = originY - (candle.high - yRange.min) * yScale;
+
+          console.log(
+            `Candle at time ${candle.time}, high ${candle.high} -> position (${x}, ${y})`,
+          );
+
+          // Create a ray burst at this position
+          newRays.push(
+            createRayBurstWithCurrentSettings(
+              x - chartOffset.x, // Adjust for chart offset
+              y,
+              canvas.width,
+              canvas.height,
+            ),
+          );
+        });
+
+        // Add all the new rays to the state
+        setRays((prev) => [...prev, ...newRays]);
+
+        // Show a toast notification
+        const toast = document.createElement("div");
+        toast.className =
+          "fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50";
+        toast.textContent = `Created ${newRays.length} sunbursts at high points`;
+        document.body.appendChild(toast);
+        setTimeout(() => document.body.removeChild(toast), 3000);
+      } else {
+        alert("No chart data available. Please import data first.");
+      }
+    };
+
     const handleCSVImport = (event: CustomEvent) => {
       const csvText = event.detail;
       console.log("CSV import event received, data length:", csvText.length);
@@ -481,6 +552,18 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
     window.addEventListener("csv-import", handleCSVImport as EventListener);
     window.addEventListener("force-chart-reload", handleForceReload);
     window.addEventListener("show-debug-info", handleShowDebugInfo);
+    window.addEventListener(
+      "plot-sunbursts-at-highs",
+      handlePlotSunburstsAtHighs,
+    );
+    window.addEventListener(
+      "update-x-scale",
+      handleUpdateXScale as EventListener,
+    );
+    window.addEventListener(
+      "update-y-scale",
+      handleUpdateYScale as EventListener,
+    );
 
     return () => {
       window.removeEventListener(
@@ -489,6 +572,18 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
       );
       window.removeEventListener("force-chart-reload", handleForceReload);
       window.removeEventListener("show-debug-info", handleShowDebugInfo);
+      window.removeEventListener(
+        "plot-sunbursts-at-highs",
+        handlePlotSunburstsAtHighs,
+      );
+      window.removeEventListener(
+        "update-x-scale",
+        handleUpdateXScale as EventListener,
+      );
+      window.removeEventListener(
+        "update-y-scale",
+        handleUpdateYScale as EventListener,
+      );
     };
   }, []);
 

@@ -1,5 +1,5 @@
 import React from "react";
-import CombinedChart from "./CombinedChart";
+import CombinedChart from "./chart/CombinedChart";
 
 function Home() {
   return (
