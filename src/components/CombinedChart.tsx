@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   CONSTANTS,
   Detector,
@@ -61,6 +61,38 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
   const [xRange, setXRange] = useState({ min: 0, max: 0 });
   const [yRange, setYRange] = useState({ min: 0, max: 0 });
 
+  // Expose the setCandleData function globally for direct access
+  useEffect(() => {
+    window.setChartData = (data: Candle[]) => {
+      console.log("Direct setCandleData called with", data.length, "candles");
+
+      // Set the candle data
+      setCandleData(data);
+
+      // Calculate and set ranges
+      if (data.length > 0) {
+        const minX = Math.min(...data.map((d) => d.time));
+        const maxX = Math.max(...data.map((d) => d.time));
+        const minY = Math.min(...data.map((d) => d.low));
+        const maxY = Math.max(...data.map((d) => d.high));
+
+        // Add some padding to the y-range
+        const yPadding = (maxY - minY) * 0.1;
+
+        setXRange({ min: minX, max: maxX });
+        setYRange({ min: minY - yPadding, max: maxY + yPadding });
+
+        // Reset view
+        setChartOffset({ x: 0, y: 0 });
+        setScale(1);
+      }
+    };
+
+    return () => {
+      delete window.setChartData;
+    };
+  }, []);
+
   // Ray burst state
   const [rays, setRays] = useState<RayBurstType[]>([]);
   const [numRays, setNumRays] = useState(12);
@@ -107,35 +139,277 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
     createDetector,
   } = useCanvasInteractions();
 
-  // Load and parse CSV data
-  useEffect(() => {
-    const parseCSV = async () => {
-      try {
-        // Fetch the CSV file
-        const response = await fetch("/src/CME_MINI_ES1.csv");
-        const csvText = await response.text();
+  // Parse CSV data function
+  const parseCSVData = useCallback((csvText: string) => {
+    console.log("Starting CSV parsing");
+    try {
+      // Parse the CSV data
+      const lines = csvText.split("\n");
 
-        // Parse the CSV data
-        const lines = csvText.split("\n");
-        const headers = lines[0].split(",");
+      // Check if we have any data
+      if (lines.length < 2) {
+        console.error("CSV file has insufficient data");
+        alert(
+          "The CSV file doesn't contain enough data. Please check the format.",
+        );
+        return;
+      }
 
-        const parsedData: Candle[] = [];
+      // Try to determine if there's a header row
+      const firstLine = lines[0].toLowerCase();
+      const hasHeader =
+        firstLine.includes("time") ||
+        firstLine.includes("open") ||
+        firstLine.includes("high") ||
+        firstLine.includes("low") ||
+        firstLine.includes("close") ||
+        firstLine.includes("date") ||
+        isNaN(parseFloat(firstLine.split(",")[0]));
 
-        // Start from index 1 to skip the header row
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i];
-          if (!line.trim()) continue;
+      const startIndex = hasHeader ? 1 : 0;
+      const parsedData: Candle[] = [];
 
-          const values = line.split(",");
-          parsedData.push({
-            time: parseInt(values[0]),
+      // Process each line
+      for (let i = startIndex; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line.trim()) continue;
+
+        const values = line.split(",");
+        if (values.length < 5) {
+          console.warn(`Line ${i} has insufficient values:`, line);
+          continue; // Skip invalid lines
+        }
+
+        try {
+          // Try to parse the timestamp - handle both unix timestamps and date strings
+          let timestamp: number;
+          if (isNaN(parseInt(values[0]))) {
+            // Try to parse as date string
+            const date = new Date(values[0]);
+            if (isNaN(date.getTime())) {
+              console.warn(`Invalid date format in line ${i}:`, values[0]);
+              continue;
+            }
+            timestamp = Math.floor(date.getTime() / 1000);
+          } else {
+            timestamp = parseInt(values[0]);
+            // If timestamp is too large (milliseconds instead of seconds), convert it
+            if (timestamp > 10000000000) {
+              // Timestamps after year 2286
+              timestamp = Math.floor(timestamp / 1000);
+            }
+          }
+
+          const candle = {
+            time: timestamp,
             open: parseFloat(values[1]),
             high: parseFloat(values[2]),
             low: parseFloat(values[3]),
             close: parseFloat(values[4]),
-          });
+          };
+
+          // Validate the candle data
+          if (
+            isNaN(candle.open) ||
+            isNaN(candle.high) ||
+            isNaN(candle.low) ||
+            isNaN(candle.close)
+          ) {
+            console.warn(`Invalid price values in line ${i}:`, values);
+            continue;
+          }
+
+          parsedData.push(candle);
+        } catch (e) {
+          console.warn(`Error parsing line ${i}:`, line, e);
+        }
+      }
+
+      if (parsedData.length === 0) {
+        console.error("No valid data found in CSV");
+        alert(
+          "No valid data could be parsed from the CSV file. Please check the format.",
+        );
+        return;
+      }
+
+      console.log(`Imported ${parsedData.length} candles from CSV`);
+
+      // Sort data by timestamp to ensure proper ordering
+      parsedData.sort((a, b) => a.time - b.time);
+
+      // Use a direct state update to ensure React processes it immediately
+      setCandleData(parsedData);
+
+      // Add a small delay and then force a redraw
+      setTimeout(() => {
+        console.log("Delayed force redraw after setting candleData");
+        window.dispatchEvent(new Event("force-chart-reload"));
+      }, 200);
+
+      // Set initial ranges
+      if (parsedData.length > 0) {
+        const minX = Math.min(...parsedData.map((d) => d.time));
+        const maxX = Math.max(...parsedData.map((d) => d.time));
+        const minY = Math.min(...parsedData.map((d) => d.low));
+        const maxY = Math.max(...parsedData.map((d) => d.high));
+
+        // Add some padding to the y-range
+        const yPadding = (maxY - minY) * 0.1;
+
+        setXRange({ min: minX, max: maxX });
+        setYRange({ min: minY - yPadding, max: maxY + yPadding });
+      }
+    } catch (error) {
+      console.error("Error parsing CSV data:", error);
+    }
+  }, []);
+
+  // We no longer load initial CSV data - wait for user to import
+  useEffect(() => {
+    // Initialize empty chart with axes
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Set canvas dimensions
+    canvas.width = width - controlPanelWidth;
+    canvas.height = height;
+
+    // Clear canvas
+    ctx.fillStyle = backgroundColor;
+    ctx.fillRect(0, 0, canvas.width, height);
+
+    // Draw empty chart with axes
+    ctx.beginPath();
+    ctx.moveTo(originX, originY);
+    ctx.lineTo(originX + chartWidth, originY);
+    ctx.strokeStyle = axisColor;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(originX, originY);
+    ctx.lineTo(originX, originY - chartHeight);
+    ctx.stroke();
+
+    // Add message to prompt user to import data
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "16px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(
+      "Please import CSV data using the panel on the right",
+      originX + chartWidth / 2,
+      originY - chartHeight / 2,
+    );
+  }, []);
+
+  // Listen for CSV import and debug events
+  useEffect(() => {
+    const handleCSVImport = (event: CustomEvent) => {
+      const csvText = event.detail;
+      console.log("CSV import event received, data length:", csvText.length);
+      console.log("First 100 chars of CSV:", csvText.substring(0, 100));
+
+      try {
+        // Parse the CSV data directly here instead of using the callback
+        const lines = csvText.split("\n");
+
+        // Check if we have any data
+        if (lines.length < 2) {
+          console.error("CSV file has insufficient data");
+          alert(
+            "The CSV file doesn't contain enough data. Please check the format.",
+          );
+          return;
         }
 
+        // Try to determine if there's a header row
+        const firstLine = lines[0].toLowerCase();
+        const hasHeader =
+          firstLine.includes("time") ||
+          firstLine.includes("open") ||
+          firstLine.includes("high") ||
+          firstLine.includes("low") ||
+          firstLine.includes("close") ||
+          firstLine.includes("date") ||
+          isNaN(parseFloat(firstLine.split(",")[0]));
+
+        const startIndex = hasHeader ? 1 : 0;
+        const parsedData: Candle[] = [];
+
+        // Process each line
+        for (let i = startIndex; i < lines.length; i++) {
+          const line = lines[i];
+          if (!line.trim()) continue;
+
+          const values = line.split(",");
+          if (values.length < 5) {
+            console.warn(`Line ${i} has insufficient values:`, line);
+            continue; // Skip invalid lines
+          }
+
+          try {
+            // Try to parse the timestamp - handle both unix timestamps and date strings
+            let timestamp: number;
+            if (isNaN(parseInt(values[0]))) {
+              // Try to parse as date string
+              const date = new Date(values[0]);
+              if (isNaN(date.getTime())) {
+                console.warn(`Invalid date format in line ${i}:`, values[0]);
+                continue;
+              }
+              timestamp = Math.floor(date.getTime() / 1000);
+            } else {
+              timestamp = parseInt(values[0]);
+              // If timestamp is too large (milliseconds instead of seconds), convert it
+              if (timestamp > 10000000000) {
+                // Timestamps after year 2286
+                timestamp = Math.floor(timestamp / 1000);
+              }
+            }
+
+            const candle = {
+              time: timestamp,
+              open: parseFloat(values[1]),
+              high: parseFloat(values[2]),
+              low: parseFloat(values[3]),
+              close: parseFloat(values[4]),
+            };
+
+            // Validate the candle data
+            if (
+              isNaN(candle.open) ||
+              isNaN(candle.high) ||
+              isNaN(candle.low) ||
+              isNaN(candle.close)
+            ) {
+              console.warn(`Invalid price values in line ${i}:`, values);
+              continue;
+            }
+
+            parsedData.push(candle);
+          } catch (e) {
+            console.warn(`Error parsing line ${i}:`, line, e);
+          }
+        }
+
+        if (parsedData.length === 0) {
+          console.error("No valid data found in CSV");
+          alert(
+            "No valid data could be parsed from the CSV file. Please check the format.",
+          );
+          return;
+        }
+
+        console.log(`Imported ${parsedData.length} candles from CSV`);
+
+        // Sort data by timestamp to ensure proper ordering
+        parsedData.sort((a, b) => a.time - b.time);
+
+        // Set the candle data state directly
         setCandleData(parsedData);
 
         // Set initial ranges
@@ -151,12 +425,64 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
           setXRange({ min: minX, max: maxX });
           setYRange({ min: minY - yPadding, max: maxY + yPadding });
         }
+
+        // Reset chart view to show the newly imported data
+        setChartOffset({ x: 0, y: 0 });
+        setScale(1);
+
+        // Add a small delay and then force a redraw
+        setTimeout(() => {
+          console.log("Delayed force redraw after setting candleData");
+          window.dispatchEvent(new Event("force-chart-reload"));
+        }, 200);
       } catch (error) {
-        console.error("Error loading or parsing CSV data:", error);
+        console.error("Error processing CSV data:", error);
+        alert("Error processing CSV data. Check console for details.");
       }
     };
 
-    parseCSV();
+    // Force chart reload handler
+    const handleForceReload = () => {
+      console.log(
+        "Force chart reload triggered, candleData length:",
+        candleData.length,
+      );
+      // This will force the chart to re-render with current data
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          // Clear the canvas completely
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          // Force a re-render by making a small change to state
+          setChartOffset((prev) => ({ x: prev.x + 0.001, y: prev.y }));
+          setTimeout(() => {
+            setChartOffset((prev) => ({ x: prev.x - 0.001, y: prev.y }));
+            console.log("Chart offset reset, should trigger redraw");
+          }, 50);
+        }
+      }
+    };
+
+    // Debug info handler
+    const handleShowDebugInfo = () => {
+      console.log("Show debug info event received");
+      showDebugInfo();
+    };
+
+    window.addEventListener("csv-import", handleCSVImport as EventListener);
+    window.addEventListener("force-chart-reload", handleForceReload);
+    window.addEventListener("show-debug-info", handleShowDebugInfo);
+
+    return () => {
+      window.removeEventListener(
+        "csv-import",
+        handleCSVImport as EventListener,
+      );
+      window.removeEventListener("force-chart-reload", handleForceReload);
+      window.removeEventListener("show-debug-info", handleShowDebugInfo);
+    };
   }, []);
 
   // Format unix timestamp to readable date
@@ -243,8 +569,65 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
     maxDetectorHeight,
   ]);
 
+  // Log when candleData changes
+  useEffect(() => {
+    console.log("Candle data updated, length:", candleData.length);
+
+    // Update global debug variable
+    window.chartData = candleData;
+
+    if (candleData.length > 0) {
+      console.log("First candle:", candleData[0]);
+      console.log("Last candle:", candleData[candleData.length - 1]);
+    }
+  }, [candleData]);
+
+  // Debug function to show current data state
+  const showDebugInfo = () => {
+    console.log("Current candleData:", candleData);
+    console.log("X Range:", xRange);
+    console.log("Y Range:", yRange);
+    console.log("Chart Offset:", chartOffset);
+    console.log("Scale:", scale);
+
+    // Show a visual debug overlay
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Draw debug info
+    ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+    ctx.fillRect(10, 10, 300, 150);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "12px monospace";
+    ctx.fillText(`Candles: ${candleData.length}`, 20, 30);
+    ctx.fillText(`X Range: ${xRange.min} - ${xRange.max}`, 20, 50);
+    ctx.fillText(
+      `Y Range: ${yRange.min.toFixed(2)} - ${yRange.max.toFixed(2)}`,
+      20,
+      70,
+    );
+    ctx.fillText(
+      `Offset: ${chartOffset.x.toFixed(2)}, ${chartOffset.y.toFixed(2)}`,
+      20,
+      90,
+    );
+    ctx.fillText(`Scale: ${scale.toFixed(2)}`, 20, 110);
+    ctx.fillText(`Canvas size: ${canvas.width} x ${canvas.height}`, 20, 130);
+  };
+
   // Draw the chart
   useEffect(() => {
+    console.log(
+      "Chart render effect running, candleData length:",
+      candleData.length,
+    );
+
+    // Add a global variable to help with debugging
+    window.chartData = candleData;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -261,6 +644,7 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
 
     // Draw candlestick chart if we have data
     if (candleData.length > 0) {
+      console.log("Drawing candlesticks, count:", candleData.length);
       // Save the context state for the chart area
       ctx.save();
 
@@ -276,6 +660,8 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
       // Draw candles
       const xScale = chartWidth / (xRange.max - xRange.min);
       const yScale = chartHeight / (yRange.max - yRange.min);
+
+      console.log("X scale:", xScale, "Y scale:", yScale);
 
       candleData.forEach((candle) => {
         // Calculate x position based on timestamp
@@ -908,8 +1294,8 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
   }, []);
 
   return (
-    <div className="fixed inset-0 flex bg-gray-900">
-      <div className="relative flex-1">
+    <div className="fixed inset-0 flex bg-gray-900 z-0">
+      <div className="relative flex-1 z-10">
         <canvas
           ref={canvasRef}
           onClick={handleCanvasClick}
@@ -918,7 +1304,7 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
           onMouseLeave={handleMouseLeave}
           onMouseMove={handleMouseMove}
           onWheel={handleWheel}
-          className="absolute inset-0 w-full h-full bg-black"
+          className="absolute inset-0 w-full h-full bg-black z-10"
         />
       </div>
 

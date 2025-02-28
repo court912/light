@@ -384,12 +384,273 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
         </div>
       </div>
 
-      {/* Export Section */}
+      {/* Debug Section */}
       <div className="border-b border-gray-700 pb-4 mb-4">
-        <h3 className="text-lg font-medium text-white mb-3">Export Data</h3>
+        <h3 className="text-lg font-medium text-white mb-3">Debug Tools</h3>
         <div className="space-y-2">
           <button
             onClick={() => {
+              // Show debug info
+              console.log("Debug button clicked");
+              window.dispatchEvent(new Event("show-debug-info"));
+            }}
+            className="w-full bg-purple-600 text-white px-3 py-2 rounded hover:bg-purple-700 transition-colors"
+          >
+            Show Debug Info
+          </button>
+          <button
+            onClick={() => {
+              // Force a reload of the chart
+              console.log("Force redraw clicked");
+              window.dispatchEvent(new Event("force-chart-reload"));
+            }}
+            className="w-full bg-purple-600 text-white px-3 py-2 rounded hover:bg-purple-700 transition-colors"
+          >
+            Force Redraw
+          </button>
+          <button
+            onClick={() => {
+              // Log the chart data to console
+              console.log("Current chart data:", window.chartData);
+              alert(
+                `Chart has ${window.chartData?.length || 0} candles. Check console for details.`,
+              );
+            }}
+            className="w-full bg-purple-600 text-white px-3 py-2 rounded hover:bg-purple-700 transition-colors"
+          >
+            Log Chart Data
+          </button>
+        </div>
+      </div>
+
+      {/* Import/Export Section */}
+      <div className="border-b border-gray-700 pb-4 mb-4">
+        <h3 className="text-lg font-medium text-white mb-3">
+          Import/Export Data
+        </h3>
+        <div className="space-y-2">
+          <div className="mb-2 text-xs text-gray-400">
+            Expected CSV format: timestamp,open,high,low,close
+            <br />
+            Example: 1625097600,4300.50,4350.25,4290.75,4320.00
+          </div>
+          <input
+            type="file"
+            accept=".csv"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                  const csvText = event.target?.result as string;
+                  if (csvText) {
+                    console.log(
+                      "CSV file read, length:",
+                      csvText.length,
+                      "first 100 chars:",
+                      csvText.substring(0, 100),
+                    );
+
+                    try {
+                      // Parse the CSV directly here
+                      const lines = csvText.split("\n");
+
+                      // Check if we have any data
+                      if (lines.length < 2) {
+                        console.error("CSV file has insufficient data");
+                        alert(
+                          "The CSV file doesn't contain enough data. Please check the format.",
+                        );
+                        return;
+                      }
+
+                      // Try to determine if there's a header row
+                      const firstLine = lines[0].toLowerCase();
+                      const hasHeader =
+                        firstLine.includes("time") ||
+                        firstLine.includes("open") ||
+                        firstLine.includes("high") ||
+                        firstLine.includes("low") ||
+                        firstLine.includes("close") ||
+                        firstLine.includes("date") ||
+                        isNaN(parseFloat(firstLine.split(",")[0]));
+
+                      const startIndex = hasHeader ? 1 : 0;
+                      const parsedData = [];
+
+                      // Process each line
+                      for (let i = startIndex; i < lines.length; i++) {
+                        const line = lines[i];
+                        if (!line.trim()) continue;
+
+                        const values = line.split(",");
+                        if (values.length < 5) {
+                          console.warn(
+                            `Line ${i} has insufficient values:`,
+                            line,
+                          );
+                          continue; // Skip invalid lines
+                        }
+
+                        try {
+                          // Try to parse the timestamp - handle both unix timestamps and date strings
+                          let timestamp;
+                          if (isNaN(parseInt(values[0]))) {
+                            // Try to parse as date string
+                            const date = new Date(values[0]);
+                            if (isNaN(date.getTime())) {
+                              console.warn(
+                                `Invalid date format in line ${i}:`,
+                                values[0],
+                              );
+                              continue;
+                            }
+                            timestamp = Math.floor(date.getTime() / 1000);
+                          } else {
+                            timestamp = parseInt(values[0]);
+                            // If timestamp is too large (milliseconds instead of seconds), convert it
+                            if (timestamp > 10000000000) {
+                              // Timestamps after year 2286
+                              timestamp = Math.floor(timestamp / 1000);
+                            }
+                          }
+
+                          const candle = {
+                            time: timestamp,
+                            open: parseFloat(values[1]),
+                            high: parseFloat(values[2]),
+                            low: parseFloat(values[3]),
+                            close: parseFloat(values[4]),
+                          };
+
+                          // Validate the candle data
+                          if (
+                            isNaN(candle.open) ||
+                            isNaN(candle.high) ||
+                            isNaN(candle.low) ||
+                            isNaN(candle.close)
+                          ) {
+                            console.warn(
+                              `Invalid price values in line ${i}:`,
+                              values,
+                            );
+                            continue;
+                          }
+
+                          parsedData.push(candle);
+                        } catch (e) {
+                          console.warn(`Error parsing line ${i}:`, line, e);
+                        }
+                      }
+
+                      if (parsedData.length === 0) {
+                        console.error("No valid data found in CSV");
+                        alert(
+                          "No valid data could be parsed from the CSV file. Please check the format.",
+                        );
+                        return;
+                      }
+
+                      console.log(
+                        `Parsed ${parsedData.length} candles from CSV`,
+                      );
+
+                      // Sort data by timestamp to ensure proper ordering
+                      parsedData.sort((a, b) => a.time - b.time);
+
+                      // Use the direct setter function
+                      if (!window.setChartData) {
+                        alert(
+                          "Chart component not initialized yet. Please try again in a moment.",
+                        );
+                        return;
+                      }
+
+                      // Call the setter function directly
+                      window.setChartData(parsedData);
+
+                      // Show toast notification
+                      const toast = document.createElement("div");
+                      toast.className =
+                        "fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50";
+                      toast.textContent = "CSV data imported successfully!";
+                      document.body.appendChild(toast);
+                      setTimeout(() => document.body.removeChild(toast), 3000);
+                    } catch (error) {
+                      console.error("Error processing CSV:", error);
+                      alert("Error processing CSV. Check console for details.");
+                    }
+                  }
+                };
+                reader.readAsText(file);
+              }
+            }}
+            className="w-full bg-gray-800 text-white px-3 py-2 rounded file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+            id="csv-file-input"
+          />
+          <button
+            onClick={() => {
+              // Generate sample data
+              const now = Math.floor(Date.now() / 1000);
+              const parsedData = [];
+              let price = 4300;
+
+              // Generate 100 candles with realistic price movement
+              for (let i = 0; i < 100; i++) {
+                const time = now - (100 - i) * 3600; // hourly candles going back from now
+                const change = (Math.random() - 0.5) * 20; // random price change
+                const open = price;
+                price += change;
+                const close = price;
+                const high = Math.max(open, close) + Math.random() * 10;
+                const low = Math.min(open, close) - Math.random() * 10;
+
+                // Add directly to parsed data
+                parsedData.push({
+                  time: time,
+                  open: open,
+                  high: high,
+                  low: low,
+                  close: close,
+                });
+              }
+
+              console.log(
+                "Generated sample data, first candle:",
+                parsedData[0],
+              );
+
+              // Set the data directly in the window object for debugging
+              window.chartData = parsedData;
+
+              // Create a direct setter function to update the chart
+              if (!window.setChartData) {
+                alert(
+                  "Chart component not initialized yet. Please try again in a moment.",
+                );
+                return;
+              }
+
+              // Call the setter function directly
+              window.setChartData(parsedData);
+
+              // Show toast
+              const toast = document.createElement("div");
+              toast.className =
+                "fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50";
+              toast.textContent = "Sample data generated and loaded!";
+              document.body.appendChild(toast);
+              setTimeout(() => document.body.removeChild(toast), 3000);
+            }}
+            className="w-full mt-2 bg-indigo-600 text-white px-3 py-2 rounded hover:bg-indigo-700 transition-colors"
+          >
+            Generate Sample Data
+          </button>
+          <button
+            onClick={() => {
+              // Force a reload of the chart
+              window.dispatchEvent(new Event("force-chart-reload"));
+
               // Get all horizontal reference lines with their prices
               const horizontalLines = window.horizontalReferenceLines || [];
               if (horizontalLines.length === 0) {
