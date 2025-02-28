@@ -119,10 +119,11 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           type="number"
           value={numRays}
           onChange={(e) =>
-            setNumRays(Math.max(1, parseInt(e.target.value) || 1))
+            setNumRays(Math.max(1, parseInt(e.target.value) || 36))
           }
           className="w-full bg-gray-800 text-white px-3 py-2 rounded"
           min="1"
+          placeholder="36"
         />
       </div>
 
@@ -171,9 +172,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           type="number"
           value={maxDetectorHeight}
           onChange={(e) =>
-            setMaxDetectorHeight(parseFloat(e.target.value) || 144000)
+            setMaxDetectorHeight(parseFloat(e.target.value) || 288000)
           }
           className="w-full bg-gray-800 text-white px-3 py-2 rounded"
+          placeholder="288000"
         />
       </div>
 
@@ -185,10 +187,11 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           type="number"
           value={numSlices}
           onChange={(e) =>
-            setNumSlices(Math.max(1, parseInt(e.target.value) || 1))
+            setNumSlices(Math.max(1, parseInt(e.target.value) || 14000))
           }
           className="w-full bg-gray-800 text-white px-3 py-2 rounded"
           min="1"
+          placeholder="14000"
         />
       </div>
 

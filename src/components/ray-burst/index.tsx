@@ -31,7 +31,7 @@ const RayBurst: React.FC = () => {
 
   // Ray state
   const [rays, setRays] = useState<RayBurstType[]>([]);
-  const [numRays, setNumRays] = useState(12);
+  const [numRays, setNumRays] = useState(36);
   const [transparency, setTransparency] = useState(100);
 
   // Detector state

@@ -64,12 +64,12 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
 
   // Ray burst state
   const [rays, setRays] = useState<RayBurstType[]>([]);
-  const [numRays, setNumRays] = useState(12);
+  const [numRays, setNumRays] = useState(36);
   const [transparency, setTransparency] = useState(100);
   const [detectors, setDetectors] = useState<Detector[]>([]);
   const [binOpacity, setBinOpacity] = useState(50);
-  const [numSlices, setNumSlices] = useState(100);
-  const [maxDetectorHeight, setMaxDetectorHeight] = useState(144000);
+  const [numSlices, setNumSlices] = useState(14000);
+  const [maxDetectorHeight, setMaxDetectorHeight] = useState(288000);
   const [amplification, setAmplification] = useState(10);
   const [maxBarWidth, setMaxBarWidth] = useState(300);
   const [colorBandRange, setColorBandRange] = useState(0.09);
