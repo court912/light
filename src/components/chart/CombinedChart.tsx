@@ -106,6 +106,14 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
   const [showCompositeDetectors, setShowCompositeDetectors] = useState(true);
   const [showReferenceLines, setShowReferenceLines] = useState(true);
 
+  // Background image state
+  const [backgroundImage, setBackgroundImage] =
+    useState<HTMLImageElement | null>(null);
+  const [imageOpacity, setImageOpacity] = useState(100);
+  const [imageWidth, setImageWidth] = useState(100);
+  const [imageHeight, setImageHeight] = useState(100);
+  const [showBackgroundImage, setShowBackgroundImage] = useState(true);
+
   // Constants for chart layout
   const controlPanelWidth = 264; // Width of the control panel
   const padding = 60;
@@ -436,6 +444,28 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
     ctx.fillStyle = backgroundColor;
     ctx.fillRect(0, 0, canvas.width, height);
 
+    // Draw background image if exists and visible
+    if (backgroundImage && showBackgroundImage) {
+      try {
+        console.log(
+          "Rendering background image",
+          backgroundImage.width,
+          backgroundImage.height,
+        );
+        ctx.save();
+        ctx.globalAlpha = imageOpacity / 100;
+        const imgWidth = (canvas.width * imageWidth) / 100;
+        const imgHeight = (canvas.height * imageHeight) / 100;
+        const x = (canvas.width - imgWidth) / 2;
+        const y = (canvas.height - imgHeight) / 2;
+        ctx.drawImage(backgroundImage, x, y, imgWidth, imgHeight);
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      } catch (error) {
+        console.error("Error rendering background image:", error);
+      }
+    }
+
     // Draw candlestick chart if we have data
     if (candleData.length > 0) {
       renderCandlesticks(
@@ -531,6 +561,11 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
     dimensions,
     colors,
     config,
+    backgroundImage,
+    showBackgroundImage,
+    imageOpacity,
+    imageWidth,
+    imageHeight,
   ]);
 
   // Handle mouse wheel - prevent default behavior but don't zoom
@@ -857,14 +892,14 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
         colorBandRange={colorBandRange}
         setColorBandRange={setColorBandRange}
         // Background image controls
-        backgroundImage={null}
-        setBackgroundImage={() => {}}
-        imageOpacity={100}
-        setImageOpacity={() => {}}
-        imageWidth={100}
-        setImageWidth={() => {}}
-        imageHeight={100}
-        setImageHeight={() => {}}
+        backgroundImage={backgroundImage}
+        setBackgroundImage={setBackgroundImage}
+        imageOpacity={imageOpacity}
+        setImageOpacity={setImageOpacity}
+        imageWidth={imageWidth}
+        setImageWidth={setImageWidth}
+        imageHeight={imageHeight}
+        setImageHeight={setImageHeight}
         // Element placement controls
         setIsPlacingDetector={setIsPlacingDetector}
         setIsPlacingCompositeDetector={setIsPlacingCompositeDetector}
@@ -877,8 +912,8 @@ const CombinedChart: React.FC<CombinedChartProps> = ({
         setShowCompositeDetectors={setShowCompositeDetectors}
         showReferenceLines={showReferenceLines}
         setShowReferenceLines={setShowReferenceLines}
-        showBackgroundImage={false}
-        setShowBackgroundImage={() => {}}
+        showBackgroundImage={showBackgroundImage}
+        setShowBackgroundImage={setShowBackgroundImage}
         // Clear functions
         clearReferenceLines={clearReferenceLines}
         clearDetectors={clearDetectors}

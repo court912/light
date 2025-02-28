@@ -119,13 +119,19 @@ export const renderBackgroundImage = (
   width: number,
   height: number,
 ) => {
-  ctx.globalAlpha = opacity / 100;
-  const imgWidth = (canvasWidth * width) / 100;
-  const imgHeight = (canvasHeight * height) / 100;
-  const x = (canvasWidth - imgWidth) / 2;
-  const y = (canvasHeight - imgHeight) / 2;
-  ctx.drawImage(image, x, y, imgWidth, imgHeight);
-  ctx.globalAlpha = 1;
+  try {
+    ctx.globalAlpha = opacity / 100;
+    const imgWidth = (canvasWidth * width) / 100;
+    const imgHeight = (canvasHeight * height) / 100;
+    const x = (canvasWidth - imgWidth) / 2;
+    const y = (canvasHeight - imgHeight) / 2;
+    ctx.drawImage(image, x, y, imgWidth, imgHeight);
+    ctx.globalAlpha = 1;
+  } catch (error) {
+    console.error("Error rendering background image:", error);
+    // Reset global alpha in case of error
+    ctx.globalAlpha = 1;
+  }
 };
 
 /**

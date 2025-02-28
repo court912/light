@@ -185,15 +185,19 @@ const RayBurst: React.FC = () => {
 
     // Draw background image if exists and visible
     if (backgroundImage && showBackgroundImage) {
-      renderBackgroundImage(
-        ctx,
-        backgroundImage,
-        canvas.width,
-        canvas.height,
-        imageOpacity,
-        imageWidth,
-        imageHeight,
-      );
+      try {
+        renderBackgroundImage(
+          ctx,
+          backgroundImage,
+          canvas.width,
+          canvas.height,
+          imageOpacity,
+          imageWidth,
+          imageHeight,
+        );
+      } catch (error) {
+        console.error("Failed to render background image:", error);
+      }
     }
 
     // Draw rays if visible

@@ -253,10 +253,32 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             const file = e.target.files?.[0];
             if (file) {
               const reader = new FileReader();
-              reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => setBackgroundImage(img);
-                img.src = e.target?.result as string;
+              reader.onload = (event) => {
+                try {
+                  const dataUrl = event.target?.result as string;
+                  if (!dataUrl) {
+                    console.error("Failed to read image file");
+                    return;
+                  }
+
+                  const img = new Image();
+                  img.crossOrigin = "anonymous";
+                  img.onload = () => {
+                    console.log(
+                      "Image loaded successfully",
+                      img.width,
+                      img.height,
+                    );
+                    setBackgroundImage(img);
+                    setShowBackgroundImage(true);
+                  };
+                  img.onerror = (err) => {
+                    console.error("Error loading image:", err);
+                  };
+                  img.src = dataUrl;
+                } catch (error) {
+                  console.error("Error processing image:", error);
+                }
               };
               reader.readAsDataURL(file);
             }
