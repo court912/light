@@ -14,15 +14,24 @@ export const renderRays = (
   rays.forEach((burst) => {
     // Draw each ray in the burst
     burst.rays.forEach((ray) => {
-      ctx.beginPath();
-      ctx.moveTo(burst.x, burst.y);
-      ctx.lineTo(
-        burst.x + Math.cos(ray.angle) * ray.length,
-        burst.y + Math.sin(ray.angle) * ray.length,
-      );
-      ctx.strokeStyle = `rgba(255, 0, 0, ${alpha})`;
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      // Only draw rays that point to the right (angles between -90° and 90°)
+      const normalizedAngle = ray.angle % (Math.PI * 2);
+      const isRightSide =
+        (normalizedAngle >= -Math.PI / 2 && normalizedAngle <= Math.PI / 2) ||
+        normalizedAngle >= (3 * Math.PI) / 2 ||
+        normalizedAngle <= (-3 * Math.PI) / 2;
+
+      if (isRightSide) {
+        ctx.beginPath();
+        ctx.moveTo(burst.x, burst.y);
+        ctx.lineTo(
+          burst.x + Math.cos(ray.angle) * ray.length,
+          burst.y + Math.sin(ray.angle) * ray.length,
+        );
+        ctx.strokeStyle = `rgba(255, 0, 0, ${alpha})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
     });
 
     // Draw the centroid (origin point) of the burst
@@ -67,6 +76,12 @@ export const renderReferenceLines = (
       // Draw vertical reference line
       ctx.moveTo(adjustedX, 0);
       ctx.lineTo(adjustedX, canvasHeight);
+
+      // Add label for vertical reference line on the time axis
+      // Find the bottom of the chart (assuming it's the canvas height)
+      const timeAxisY = canvasHeight - 60; // Adjust based on your chart's padding
+
+      // No timestamp labels for vertical reference lines
     }
 
     ctx.stroke();

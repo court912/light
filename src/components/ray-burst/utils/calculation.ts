@@ -82,6 +82,13 @@ export const calculateIntersection = (
   // Ray is vertical (or nearly vertical), no intersection with vertical detector
   if (Math.abs(dx) < 1e-10) return null;
 
+  // Only consider rays pointing to the right (positive x direction)
+  // This ensures that detectors only register rays coming from their left
+  if (dx <= 0) return null;
+
+  // Only consider detectors to the right of the burst
+  if (detectorX <= burst.x) return null;
+
   // Calculate intersection parameter
   const t = (detectorX - burst.x) / dx;
 

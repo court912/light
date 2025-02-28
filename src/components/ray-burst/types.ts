@@ -50,3 +50,12 @@ export const CONSTANTS = {
   MOVE_HANDLE_OFFSET: 15,
   HOVER_DETECTION_RADIUS_SQUARED: 36, // 6px radius squared
 };
+
+declare global {
+  interface Window {
+    chartData?: any[];
+    setChartData?: (data: any[]) => void;
+    horizontalReferenceLines?: any[];
+    minutesPerCandle?: number;
+  }
+}
