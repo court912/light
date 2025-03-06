@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import ScaleInputs from "./ScaleInputs";
+import ApiDataCheckbox from "../../chart/components/ApiDataCheckbox";
 
 interface ControlPanelProps {
   // Ray controls
@@ -549,6 +550,17 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           Import/Export Data
         </h3>
         <div className="space-y-2">
+          <ApiDataCheckbox
+            onDataLoaded={(data) => {
+              if (window.setChartData) {
+                window.setChartData(data);
+              } else {
+                alert(
+                  "Chart component not initialized yet. Please try again in a moment.",
+                );
+              }
+            }}
+          />
           <div className="mb-2 text-xs text-gray-400">
             Expected CSV format: timestamp,open,high,low,close
             <br />
